@@ -55,6 +55,46 @@ When a process should continue despite failures, it must **skip the failed item 
 - Never return None/null to indicate failure - raise an exception with details
 - For batch operations, always report both success count and detailed failure list
 
+### Critical Patterns
+
+#### Fail Fast, No Fallbacks
+
+Never use default values to hide bugs:
+```python
+# WRONG - hides configuration bugs
+port = config.port or 3000
+schema = req.context.schema or 'public'
+
+# CORRECT - fail fast
+if not config.port:
+    raise ConfigError('port required')
+schema = req.context.schema  # Let it fail if missing
+```
+
+#### Query Keys Owned by Features
+
+Each feature maintains its own query keys in `{feature}/hooks/use{Feature}Queries.ts`:
+- Never import query keys across features
+- Use `DISABLED_QUERY_KEY` and `STALE_TIMES` from `@/features/shared/config/queryPatterns`
+- See `@PRPs/ai_docs/QUERY_PATTERNS.md` for complete patterns
+
+#### Direct Database Values
+
+No translation layers. Database values (`"todo"`, `"doing"`, `"review"`, `"done"`) used directly in TypeScript types and UI.
+
+#### Vertical Slice Ownership
+
+Features own their entire stack:
+```text
+src/features/{feature}/
+├── components/      # UI
+├── hooks/           # Query hooks & keys
+├── services/        # API calls
+└── types/           # TypeScript types
+```
+
+Sub-features nest: `projects/tasks/`, `projects/documents/`
+
 ### Code Quality
 
 - Remove dead code immediately rather than maintaining it - no backward compatibility or legacy functions
@@ -134,6 +174,18 @@ make test-fe             # Frontend tests only
 make test-be             # Backend tests only
 ```
 
+### Development Modes
+
+- **Hybrid (recommended)**: `make dev` - Frontend has hot reload, backend stable in Docker
+- **Full Docker**: `make dev-docker` - Integration testing, production-like environment
+- **Backend Only**: `docker compose --profile backend up -d` - When working on frontend only
+
+### Working Directories
+
+- **Frontend commands**: Run from `archon-ui-main/`
+- **Backend commands**: Run from `python/` or project root with `uv run`
+- **Docker/Make commands**: Run from project root
+
 ## Architecture Overview
 
 @PRPs/ai_docs/ARCHITECTURE.md
@@ -183,8 +235,6 @@ Key tables in Supabase:
 ## API Naming Conventions
 
 @PRPs/ai_docs/API_NAMING_CONVENTIONS.md
-
-Use database values directly (no FE mapping; type‑safe end‑to‑end from BE upward):
 
 ## Environment Variables
 
@@ -265,42 +315,4 @@ npm run lint:files src/components/SomeComponent.tsx
 
 ## MCP Tools Available
 
-When connected to Claude/Cursor/Windsurf, the following tools are available:
-
-### Knowledge Base Tools
-
-- `archon:rag_search_knowledge_base` - Search knowledge base for relevant content
-- `archon:rag_search_code_examples` - Find code snippets in the knowledge base
-- `archon:rag_get_available_sources` - List available knowledge sources
-- `archon:rag_list_pages_for_source` - List all pages for a given source (browse documentation structure)
-- `archon:rag_read_full_page` - Retrieve full page content by page_id or URL
-
-### Project Management
-
-- `archon:find_projects` - Find all projects, search, or get specific project (by project_id)
-- `archon:manage_project` - Manage projects with actions: "create", "update", "delete"
-
-### Task Management
-
-- `archon:find_tasks` - Find tasks with search, filters, or get specific task (by task_id)
-- `archon:manage_task` - Manage tasks with actions: "create", "update", "delete"
-
-### Document Management
-
-- `archon:find_documents` - Find documents, search, or get specific document (by document_id)
-- `archon:manage_document` - Manage documents with actions: "create", "update", "delete"
-
-### Version Control
-
-- `archon:find_versions` - Find version history or get specific version
-- `archon:manage_version` - Manage versions with actions: "create", "restore"
-
-## Important Notes
-
-- Projects feature is optional - toggle in Settings UI
-- TanStack Query handles all data fetching; smart HTTP polling is used where appropriate (no WebSockets)
-- Frontend uses Vite proxy for API calls in development
-- Python backend uses `uv` for dependency management
-- Docker Compose handles service orchestration
-- TanStack Query for all data fetching - NO PROP DRILLING
-- Vertical slice architecture in `/features` - features own their sub-features
+@PRPs/ai_docs/MCP_TOOLS.md
