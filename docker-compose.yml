@@ -1,4 +1,8 @@
-# Docker Compose profiles:
+# Docker Compose for Archon Services
+# All containers use 'archon-' prefix to avoid namespace collisions.
+# Network: archon-network
+#
+# Profiles:
 # - Default (no profile): Starts archon-server, archon-mcp, and archon-frontend
 # - Agents are opt-in: archon-agents starts only with the "agents" profile
 # Usage:

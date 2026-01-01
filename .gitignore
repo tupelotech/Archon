@@ -1,5 +1,6 @@
 __pycache__
 .env
+docker-compose.override.yml
 .serena
 .claude/settings.local.json
 PRPs/local
@@ -20,3 +21,4 @@ release-notes-*.md
 # Self-hosted Supabase volumes (local database data)
 volumes/db-data/
 supabase-db-data/
+archon-supabase-db-data/

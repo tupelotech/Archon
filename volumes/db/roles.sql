@@ -1,5 +1,6 @@
 -- Supabase required roles for local development
 -- This file is executed during database initialization
+-- Password matches POSTGRES_PASSWORD from .env
 
 -- Create required roles if they don't exist
 DO $$
@@ -22,16 +23,22 @@ BEGIN
   -- Create authenticator role for PostgREST
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authenticator') THEN
     CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'your-super-secret-postgres-password';
+  ELSE
+    ALTER ROLE authenticator WITH PASSWORD 'your-super-secret-postgres-password';
   END IF;
 
-  -- Create supabase_auth_admin role
+  -- Create supabase_auth_admin role (GoTrue uses this)
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'supabase_auth_admin') THEN
-    CREATE ROLE supabase_auth_admin NOLOGIN NOINHERIT CREATEROLE CREATEDB;
+    CREATE ROLE supabase_auth_admin LOGIN PASSWORD 'your-super-secret-postgres-password' NOINHERIT CREATEROLE CREATEDB;
+  ELSE
+    ALTER ROLE supabase_auth_admin WITH PASSWORD 'your-super-secret-postgres-password' LOGIN;
   END IF;
 
   -- Create supabase_admin role
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'supabase_admin') THEN
-    CREATE ROLE supabase_admin NOLOGIN NOINHERIT CREATEROLE CREATEDB REPLICATION BYPASSRLS;
+    CREATE ROLE supabase_admin LOGIN PASSWORD 'your-super-secret-postgres-password' NOINHERIT CREATEROLE CREATEDB REPLICATION BYPASSRLS;
+  ELSE
+    ALTER ROLE supabase_admin WITH PASSWORD 'your-super-secret-postgres-password' LOGIN;
   END IF;
 END
 $$;
@@ -40,7 +47,7 @@ $$;
 GRANT anon TO authenticator;
 GRANT authenticated TO authenticator;
 GRANT service_role TO authenticator;
-GRANT supabase_auth_admin TO authenticator;
+GRANT supabase_auth_admin TO postgres;
 
 -- Grant supabase_admin permissions
 GRANT ALL PRIVILEGES ON DATABASE postgres TO supabase_admin;
@@ -56,6 +63,10 @@ ALTER ROLE service_role BYPASSRLS;
 CREATE SCHEMA IF NOT EXISTS auth;
 GRANT USAGE ON SCHEMA auth TO supabase_auth_admin;
 GRANT ALL ON SCHEMA auth TO supabase_auth_admin;
+GRANT ALL ON ALL TABLES IN SCHEMA auth TO supabase_auth_admin;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO supabase_auth_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON TABLES TO supabase_auth_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON SEQUENCES TO supabase_auth_admin;
 
 -- Create extensions schema
 CREATE SCHEMA IF NOT EXISTS extensions;
@@ -72,7 +83,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authentic
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
 
--- Create function to get auth role
+-- Create function to get auth role (required by Archon's RLS policies)
 CREATE OR REPLACE FUNCTION auth.role()
 RETURNS TEXT AS $$
   SELECT COALESCE(

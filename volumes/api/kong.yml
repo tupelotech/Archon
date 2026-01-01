@@ -28,7 +28,7 @@ acls:
 services:
   ## PostgREST
   - name: rest-v1
-    url: http://supabase-rest:3000/
+    url: http://archon-supabase-rest:3000/
     routes:
       - name: rest-v1
         strip_path: true
@@ -48,7 +48,7 @@ services:
 
   ## Auth / GoTrue
   - name: auth-v1
-    url: http://supabase-auth:9999/
+    url: http://archon-supabase-auth:9999/
     routes:
       - name: auth-v1
         strip_path: true
