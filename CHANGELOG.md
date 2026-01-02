@@ -61,17 +61,63 @@ All notable changes to this fork will be documented in this file.
 
 This is a fork of [coleam00/Archon](https://github.com/coleam00/Archon).
 
-### Upstream Tracking
+### Branch Strategy
+
+```
+upstream/main ─────────────────────────────────────────────► (original Archon)
+                 │
+                 ▼ fetch/merge
+origin/main ─────●─────────────────────────────────────────► (synced with upstream)
+                 │
+                 ▼ merge
+origin/tupelotech ───●───●───●─────────────────────────────► (customizations)
+                     │   │   │
+                   local preferences
+                   features  enhancements
+```
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Synced with upstream - DO NOT customize |
+| `tupelotech` | All custom features and changes |
+| `stable` | Legacy - migrate to tupelotech |
+
+### Updating from Upstream
+
 ```bash
-# Fetch upstream changes
+# 1. Fetch latest from upstream
 git fetch upstream
 
-# Merge upstream updates
+# 2. Update main branch
+git checkout main
 git merge upstream/main
+git push origin main
 
-# Push to fork
-git push origin stable
+# 3. Merge upstream changes into customization branch
+git checkout tupelotech
+git merge main
+# Resolve any conflicts
+git push origin tupelotech
 ```
+
+### Adding Custom Features
+
+```bash
+# Always work on tupelotech branch
+git checkout tupelotech
+
+# Make changes, commit
+git add -A && git commit -m "feat: description"
+git push origin tupelotech
+```
+
+### Conflict Resolution
+
+If upstream changes conflict with customizations:
+1. Conflicts will appear during `git merge main`
+2. Edit conflicting files to keep both upstream and custom changes where possible
+3. Test thoroughly before pushing
+4. Document significant merge decisions in this changelog
 
 ### Local Files (Not Tracked)
 These files contain local configuration and won't be affected by upstream merges:
