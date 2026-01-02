@@ -4,15 +4,45 @@
  * Displays a chronological timeline of changes with filtering.
  */
 
-import { Bug, FileText, Filter, Loader2, Settings, Sparkles, TestTube, Wrench } from "lucide-react";
+import { Bug, FileText, Filter, GitBranch, Loader2, Package, Palette, Settings, Sparkles, TestTube, Wrench, Zap } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button, Card } from "../../ui/primitives";
 import { cn } from "../../ui/primitives/styles";
 import { useChanges, useProjectChanges } from "../hooks";
 import type { Change, ChangeFilters, ChangeType } from "../types";
 import { CHANGE_TYPES, CHANGE_TYPE_CONFIG } from "../types";
 import { ChangeCard } from "./ChangeCard";
+
+// Storage key for filter preferences
+const FILTER_STORAGE_KEY = "archon-change-filters";
+
+// Get stored filters for a project
+function getStoredFilters(projectId?: string): ChangeType[] {
+  try {
+    const stored = localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!stored) return [];
+    const data = JSON.parse(stored);
+    const key = projectId || "global";
+    return Array.isArray(data[key]) ? data[key] : [];
+  } catch {
+    return [];
+  }
+}
+
+// Store filters for a project
+function storeFilters(filters: ChangeType[], projectId?: string): void {
+  try {
+    const stored = localStorage.getItem(FILTER_STORAGE_KEY);
+    const data = stored ? JSON.parse(stored) : {};
+    const key = projectId || "global";
+    data[key] = filters;
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export interface ChangeTimelineProps {
   projectId?: string; // If provided, shows only project changes
@@ -30,6 +60,10 @@ const FILTER_ICONS: Record<ChangeType, React.ReactNode> = {
   docs: <FileText className="w-3.5 h-3.5" />,
   config: <Settings className="w-3.5 h-3.5" />,
   test: <TestTube className="w-3.5 h-3.5" />,
+  style: <Palette className="w-3.5 h-3.5" />,
+  perf: <Zap className="w-3.5 h-3.5" />,
+  deps: <Package className="w-3.5 h-3.5" />,
+  ci: <GitBranch className="w-3.5 h-3.5" />,
 };
 
 // Group changes by date
@@ -73,8 +107,33 @@ export const ChangeTimeline: React.FC<ChangeTimelineProps> = ({
   maxItems,
   showFilters = true,
 }) => {
-  const [filters, setFilters] = useState<ChangeFilters>({});
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedTypes, setSelectedTypes] = useState<Set<ChangeType>>(() => {
+    // Initialize from URL params first, then localStorage
+    const urlTypes = searchParams.get("types");
+    if (urlTypes) {
+      const types = urlTypes.split(",").filter((t): t is ChangeType => CHANGE_TYPES.includes(t as ChangeType));
+      return new Set(types);
+    }
+    return new Set(getStoredFilters(projectId));
+  });
+  const [showFilterPanel, setShowFilterPanel] = useState(() => selectedTypes.size > 0);
+
+  // Sync URL params when filters change
+  useEffect(() => {
+    const types = Array.from(selectedTypes);
+    if (types.length > 0) {
+      searchParams.set("types", types.join(","));
+    } else {
+      searchParams.delete("types");
+    }
+    setSearchParams(searchParams, { replace: true });
+    // Persist to localStorage
+    storeFilters(types, projectId);
+  }, [selectedTypes, projectId, searchParams, setSearchParams]);
+
+  // Create filters object for API (single type for now, multi-select is client-side)
+  const apiFilters: ChangeFilters = {};
 
   // Use appropriate hook based on whether projectId is provided
   const {
@@ -83,19 +142,34 @@ export const ChangeTimeline: React.FC<ChangeTimelineProps> = ({
     error,
   } = projectId
     ? useProjectChanges(projectId, 1, maxItems || 50)
-    : useChanges(filters, 1, maxItems || 50);
+    : useChanges(apiFilters, 1, maxItems || 50);
 
-  const changes = changesData?.changes || [];
-  const groupedChanges = groupChangesByDate(changes);
+  // Apply client-side multi-select filter
+  const allChanges = changesData?.changes || [];
+  const filteredChanges = selectedTypes.size === 0
+    ? allChanges
+    : allChanges.filter((change) => selectedTypes.has(change.change_type));
+  const groupedChanges = groupChangesByDate(filteredChanges);
 
-  const handleFilterChange = (changeType: ChangeType | undefined) => {
-    setFilters((prev) => ({
-      ...prev,
-      change_type: changeType,
-    }));
-  };
+  // Toggle a category in multi-select mode
+  const handleToggleType = useCallback((changeType: ChangeType) => {
+    setSelectedTypes((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(changeType)) {
+        newSet.delete(changeType);
+      } else {
+        newSet.add(changeType);
+      }
+      return newSet;
+    });
+  }, []);
 
-  const activeFilter = filters.change_type;
+  // Clear all filters
+  const handleClearFilters = useCallback(() => {
+    setSelectedTypes(new Set());
+  }, []);
+
+  const hasActiveFilters = selectedTypes.size > 0;
 
   if (isLoading) {
     return (
@@ -114,7 +188,7 @@ export const ChangeTimeline: React.FC<ChangeTimelineProps> = ({
     );
   }
 
-  if (changes.length === 0) {
+  if (allChanges.length === 0) {
     return (
       <Card blur="md" transparency="light" className="p-8 text-center">
         <div className="text-gray-400 dark:text-gray-500 mb-2">
@@ -146,27 +220,33 @@ export const ChangeTimeline: React.FC<ChangeTimelineProps> = ({
           {showFilterPanel && (
             <div className="flex items-center gap-1 flex-wrap">
               <Button
-                variant={activeFilter === undefined ? "cyan" : "ghost"}
+                variant={selectedTypes.size === 0 ? "cyan" : "ghost"}
                 size="xs"
-                onClick={() => handleFilterChange(undefined)}
+                onClick={handleClearFilters}
               >
                 All
               </Button>
               {CHANGE_TYPES.map((type) => {
                 const config = CHANGE_TYPE_CONFIG[type];
+                const isSelected = selectedTypes.has(type);
                 return (
                   <Button
                     key={type}
-                    variant={activeFilter === type ? "cyan" : "ghost"}
+                    variant={isSelected ? "cyan" : "ghost"}
                     size="xs"
-                    onClick={() => handleFilterChange(type)}
-                    className="gap-1"
+                    onClick={() => handleToggleType(type)}
+                    className={cn("gap-1", isSelected && "ring-1 ring-cyan-400/50")}
                   >
                     {FILTER_ICONS[type]}
                     {config.label}
                   </Button>
                 );
               })}
+              {hasActiveFilters && (
+                <span className="text-xs text-gray-500 ml-2">
+                  {selectedTypes.size} selected
+                </span>
+              )}
             </div>
           )}
         </div>

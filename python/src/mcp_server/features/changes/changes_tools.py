@@ -20,7 +20,7 @@ from src.server.config.service_discovery import get_api_url
 logger = logging.getLogger(__name__)
 
 # Valid change types
-VALID_CHANGE_TYPES = ["feature", "bugfix", "refactor", "docs", "config", "test"]
+VALID_CHANGE_TYPES = ["feature", "bugfix", "refactor", "docs", "config", "test", "style", "perf", "deps", "ci"]
 
 # Optimization constants
 MAX_SUMMARY_LENGTH = 500
@@ -51,47 +51,48 @@ def register_changes_tools(mcp: FastMCP):
     @mcp.tool()
     async def log_change(
         ctx: Context,
-        change_type: str,
         summary: str,
+        change_type: str | None = None,
         project_id: str | None = None,
+        task_id: str | None = None,
         session_id: str | None = None,
         details: dict[str, Any] | None = None,
         files_affected: list[str] | None = None,
         commit_sha: str | None = None,
+        sub_category: str | None = None,
     ) -> str:
         """
         Log a development change for tracking and changelog generation.
 
         Use this tool to record significant changes made during a coding session.
-        Changes are categorized by type and can be linked to projects.
+        The category is automatically detected from the summary and files - you
+        don't need to specify change_type unless you want to override.
 
         Args:
-            change_type: Category of change. Must be one of:
-                - "feature": New functionality added
-                - "bugfix": Bug fixes and corrections
-                - "refactor": Code restructuring without behavior changes
-                - "docs": Documentation updates
-                - "config": Configuration changes
-                - "test": Test additions or modifications
             summary: Brief description of what changed (required)
+            change_type: Optional category override. If not provided, auto-detected.
+                Valid types: feature, bugfix, refactor, docs, config, test, style, perf, deps, ci
             project_id: Optional UUID of the associated Archon project
+            task_id: Optional UUID of the associated task (for changelog grouping by task)
             session_id: Optional session identifier for grouping related changes
             details: Optional dict with additional metadata (impact, related issues, etc.)
-            files_affected: Optional list of file paths that were modified
+            files_affected: Optional list of file paths that were modified (improves auto-detection)
             commit_sha: Optional git commit SHA if the change was committed
+            sub_category: Optional sub-category for granular classification (e.g., "ui", "api", "database")
 
         Returns:
-            JSON with success status and created change entry
+            JSON with success status and created change entry (includes auto-detected category)
 
         Examples:
-            log_change("feature", "Added user authentication with JWT tokens")
-            log_change("bugfix", "Fixed null pointer in user service", project_id="p-123")
-            log_change("refactor", "Extracted payment logic to separate service",
-                      files_affected=["src/payment.py", "src/order.py"])
+            log_change("Added user authentication with JWT tokens")  # Auto-detects "feature"
+            log_change("Fixed null pointer in user service")  # Auto-detects "bugfix"
+            log_change("Extracted payment logic", files_affected=["src/payment.py"])
+            log_change("Updated README", change_type="docs")  # Explicit override
+            log_change("Implemented login form", task_id="task-uuid")  # Link to task
         """
         try:
-            # Validate change type
-            if change_type not in VALID_CHANGE_TYPES:
+            # Validate change type if provided
+            if change_type and change_type not in VALID_CHANGE_TYPES:
                 return MCPErrorFormatter.format_error(
                     error_type="validation_error",
                     message=f"Invalid change_type '{change_type}'",
@@ -108,13 +109,17 @@ def register_changes_tools(mcp: FastMCP):
             api_url = get_api_url()
             timeout = get_default_timeout()
 
-            request_data = {
-                "change_type": change_type,
+            request_data: dict[str, Any] = {
                 "summary": summary,
             }
 
+            # Only include change_type if explicitly provided (otherwise API auto-detects)
+            if change_type:
+                request_data["change_type"] = change_type
             if project_id:
                 request_data["project_id"] = project_id
+            if task_id:
+                request_data["task_id"] = task_id
             if session_id:
                 request_data["session_id"] = session_id
             if details:
@@ -123,6 +128,8 @@ def register_changes_tools(mcp: FastMCP):
                 request_data["files_affected"] = files_affected
             if commit_sha:
                 request_data["commit_sha"] = commit_sha
+            if sub_category:
+                request_data["sub_category"] = sub_category
 
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
@@ -134,18 +141,28 @@ def register_changes_tools(mcp: FastMCP):
                     result = response.json()
                     change = result.get("change", {})
 
-                    return json.dumps({
+                    # Include detection info in response
+                    response_data = {
                         "success": True,
                         "change": optimize_change_response(change),
                         "change_id": change.get("id"),
                         "message": "Change logged successfully",
-                    })
+                    }
+
+                    # Add auto-detection info if applicable
+                    change_details = change.get("details", {})
+                    if change_details.get("auto_detected"):
+                        response_data["auto_detected"] = True
+                        response_data["detected_type"] = change.get("change_type")
+                        response_data["confidence"] = change_details.get("detection_confidence")
+
+                    return json.dumps(response_data)
                 else:
                     return MCPErrorFormatter.from_http_error(response, "log change")
 
         except httpx.RequestError as e:
             return MCPErrorFormatter.from_exception(
-                e, "log change", {"change_type": change_type}
+                e, "log change", {"summary": summary[:50] if summary else None}
             )
         except Exception as e:
             logger.error(f"Error logging change: {e}", exc_info=True)
@@ -271,9 +288,12 @@ def register_changes_tools(mcp: FastMCP):
         action: str,
         change_id: str | None = None,
         project_id: str | None = None,
+        task_id: str | None = None,
         summary: str | None = None,
         files_affected: list[str] | None = None,
         commit_sha: str | None = None,
+        change_type: str | None = None,
+        sub_category: str | None = None,
     ) -> str:
         """
         Manage changes (update or delete).
@@ -284,16 +304,21 @@ def register_changes_tools(mcp: FastMCP):
             action: "update" | "delete"
             change_id: Change UUID (required for both actions)
             project_id: New project association (for update)
+            task_id: New task association (for update - enables changelog grouping)
             summary: Updated summary text (for update)
             files_affected: Updated list of files (for update)
             commit_sha: Updated commit SHA (for update)
+            change_type: Updated change type (for update)
+            sub_category: Updated sub-category (for update)
 
         Returns:
             JSON with success status and updated/deleted change info
 
         Examples:
             manage_change("update", change_id="c-123", project_id="p-456")
+            manage_change("update", change_id="c-123", task_id="t-789")  # Link to task
             manage_change("update", change_id="c-123", summary="Updated description")
+            manage_change("update", change_id="c-123", change_type="bugfix", sub_category="ui")
             manage_change("delete", change_id="c-123")
         """
         try:
@@ -339,12 +364,24 @@ def register_changes_tools(mcp: FastMCP):
 
                     if project_id is not None:
                         update_data["project_id"] = project_id
+                    if task_id is not None:
+                        update_data["task_id"] = task_id
                     if summary is not None:
                         update_data["summary"] = summary
                     if files_affected is not None:
                         update_data["files_affected"] = files_affected
                     if commit_sha is not None:
                         update_data["commit_sha"] = commit_sha
+                    if change_type is not None:
+                        if change_type not in VALID_CHANGE_TYPES:
+                            return MCPErrorFormatter.format_error(
+                                error_type="validation_error",
+                                message=f"Invalid change_type '{change_type}'",
+                                suggestion=f"Must be one of: {', '.join(VALID_CHANGE_TYPES)}"
+                            )
+                        update_data["change_type"] = change_type
+                    if sub_category is not None:
+                        update_data["sub_category"] = sub_category
 
                     if not update_data:
                         return MCPErrorFormatter.format_error(
@@ -388,6 +425,7 @@ def register_changes_tools(mcp: FastMCP):
         ctx: Context,
         project_id: str,
         format: str = "markdown",
+        group_by: str = "date",
     ) -> str:
         """
         Generate a formatted changelog for a project.
@@ -398,13 +436,16 @@ def register_changes_tools(mcp: FastMCP):
         Args:
             project_id: UUID of the project (required)
             format: Output format - "markdown" (default) or "json"
+            group_by: Grouping strategy - "date" (default) or "task"
+                      Use "task" to see changes grouped by linked tasks
 
         Returns:
             JSON with changelog content and metadata
 
         Examples:
-            get_project_changelog(project_id="p-123")  # Markdown changelog
+            get_project_changelog(project_id="p-123")  # Markdown changelog by date
             get_project_changelog(project_id="p-123", format="json")  # Raw JSON
+            get_project_changelog(project_id="p-123", group_by="task")  # Group by task
         """
         try:
             if not project_id:
@@ -421,25 +462,41 @@ def register_changes_tools(mcp: FastMCP):
                     suggestion="Must be 'markdown' or 'json'"
                 )
 
+            if group_by not in ["date", "task"]:
+                return MCPErrorFormatter.format_error(
+                    error_type="validation_error",
+                    message=f"Invalid group_by '{group_by}'",
+                    suggestion="Must be 'date' or 'task'"
+                )
+
             api_url = get_api_url()
             timeout = get_default_timeout()
 
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.get(
                     urljoin(api_url, f"/api/projects/{project_id}/changelog"),
-                    params={"format": format}
+                    params={"format": format, "group_by": group_by}
                 )
 
                 if response.status_code == 200:
                     result = response.json()
-                    return json.dumps({
+                    response_data = {
                         "success": True,
                         "project_id": project_id,
                         "format": format,
-                        "changelog": result.get("changelog"),
-                        "changes": result.get("changes"),
+                        "group_by": group_by,
                         "count": result.get("count", 0),
-                    })
+                    }
+
+                    # Include either changelog (markdown) or grouped/changes (json)
+                    if result.get("changelog"):
+                        response_data["changelog"] = result.get("changelog")
+                    if result.get("grouped"):
+                        response_data["grouped"] = result.get("grouped")
+                    if result.get("changes"):
+                        response_data["changes"] = result.get("changes")
+
+                    return json.dumps(response_data)
                 elif response.status_code == 404:
                     return MCPErrorFormatter.format_error(
                         error_type="not_found",
@@ -457,3 +514,73 @@ def register_changes_tools(mcp: FastMCP):
         except Exception as e:
             logger.error(f"Error getting changelog: {e}", exc_info=True)
             return MCPErrorFormatter.from_exception(e, "get changelog")
+
+    @mcp.tool()
+    async def suggest_category(
+        ctx: Context,
+        file_paths: list[str] | None = None,
+        commit_message: str | None = None,
+        tool_context: dict[str, Any] | None = None,
+    ) -> str:
+        """
+        Suggest a category for a change based on file patterns and commit message.
+
+        Analyzes file paths, commit message, and tool context to suggest
+        the most appropriate change category with a confidence score.
+
+        Args:
+            file_paths: List of file paths that were modified
+            commit_message: The commit message or change summary
+            tool_context: Optional context from the tool being used (e.g., {"tool_name": "test"})
+
+        Returns:
+            JSON with suggested category, sub_category, confidence score, and reasoning
+
+        Examples:
+            suggest_category(file_paths=["tests/test_auth.py"])  # Suggests "test"
+            suggest_category(commit_message="fix: resolve null pointer bug")  # Suggests "bugfix"
+            suggest_category(file_paths=["src/components/Button.tsx"], commit_message="feat: add button")
+        """
+        try:
+            if not file_paths and not commit_message and not tool_context:
+                return MCPErrorFormatter.format_error(
+                    error_type="validation_error",
+                    message="At least one input is required",
+                    suggestion="Provide file_paths, commit_message, or tool_context"
+                )
+
+            api_url = get_api_url()
+            timeout = get_default_timeout()
+
+            request_data: dict[str, Any] = {}
+            if file_paths:
+                request_data["file_paths"] = file_paths
+            if commit_message:
+                request_data["commit_message"] = commit_message
+            if tool_context:
+                request_data["tool_context"] = tool_context
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    urljoin(api_url, "/api/changes/suggest-category"),
+                    json=request_data
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": True,
+                        "category": result.get("category"),
+                        "sub_category": result.get("sub_category"),
+                        "confidence": result.get("confidence"),
+                        "reasoning": result.get("reasoning"),
+                        "signals": result.get("signals", []),
+                    })
+                else:
+                    return MCPErrorFormatter.from_http_error(response, "suggest category")
+
+        except httpx.RequestError as e:
+            return MCPErrorFormatter.from_exception(e, "suggest category")
+        except Exception as e:
+            logger.error(f"Error suggesting category: {e}", exc_info=True)
+            return MCPErrorFormatter.from_exception(e, "suggest category")

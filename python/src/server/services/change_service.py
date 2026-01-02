@@ -19,8 +19,10 @@ logger = get_logger(__name__)
 
 
 # Valid change types matching the database enum
-ChangeType = Literal["feature", "bugfix", "refactor", "docs", "config", "test"]
-VALID_CHANGE_TYPES: list[ChangeType] = ["feature", "bugfix", "refactor", "docs", "config", "test"]
+ChangeType = Literal["feature", "bugfix", "refactor", "docs", "config", "test", "style", "perf", "deps", "ci"]
+VALID_CHANGE_TYPES: list[ChangeType] = [
+    "feature", "bugfix", "refactor", "docs", "config", "test", "style", "perf", "deps", "ci"
+]
 
 
 class ChangeService:
@@ -44,22 +46,26 @@ class ChangeService:
         change_type: str,
         summary: str,
         project_id: str | None = None,
+        task_id: str | None = None,
         session_id: str | None = None,
         details: dict[str, Any] | None = None,
         files_affected: list[str] | None = None,
         commit_sha: str | None = None,
+        sub_category: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
         """
         Create a new change entry.
 
         Args:
-            change_type: Category of change (feature, bugfix, refactor, docs, config, test)
+            change_type: Category of change (feature, bugfix, refactor, docs, config, test, style, perf, deps, ci)
             summary: Brief description of what changed
             project_id: Optional reference to associated project
+            task_id: Optional reference to associated task (for changelog grouping)
             session_id: Optional session identifier for grouping related changes
-            details: Optional JSONB metadata for additional context
+            details: Optional JSONB metadata for additional context (includes auto_detected_type, confidence_score)
             files_affected: Optional list of file paths that were modified
             commit_sha: Optional git commit SHA if committed
+            sub_category: Optional sub-category for granular classification
 
         Returns:
             Tuple of (success, result_dict)
@@ -85,11 +91,17 @@ class ChangeService:
             if project_id:
                 change_data["project_id"] = project_id
 
+            if task_id:
+                change_data["task_id"] = task_id
+
             if session_id:
                 change_data["session_id"] = session_id
 
             if commit_sha:
                 change_data["commit_sha"] = commit_sha
+
+            if sub_category:
+                change_data["sub_category"] = sub_category
 
             response = self.supabase_client.table("archon_changes").insert(change_data).execute()
 
@@ -245,10 +257,13 @@ class ChangeService:
         self,
         change_id: str,
         project_id: str | None = None,
+        task_id: str | None = None,
         summary: str | None = None,
         details: dict[str, Any] | None = None,
         files_affected: list[str] | None = None,
         commit_sha: str | None = None,
+        change_type: str | None = None,
+        sub_category: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
         """
         Update an existing change entry.
@@ -256,10 +271,13 @@ class ChangeService:
         Args:
             change_id: UUID of the change to update
             project_id: New project association (can set or clear)
+            task_id: New task association (can set or clear)
             summary: Updated summary text
             details: Updated metadata
             files_affected: Updated list of files
             commit_sha: Updated commit SHA
+            change_type: Updated change type
+            sub_category: Updated sub-category
 
         Returns:
             Tuple of (success, result_dict)
@@ -282,6 +300,9 @@ class ChangeService:
             if project_id is not None:
                 update_data["project_id"] = project_id
 
+            if task_id is not None:
+                update_data["task_id"] = task_id
+
             if summary is not None:
                 if not summary.strip():
                     return False, {"error": "Summary cannot be empty"}
@@ -295,6 +316,15 @@ class ChangeService:
 
             if commit_sha is not None:
                 update_data["commit_sha"] = commit_sha
+
+            if change_type is not None:
+                is_valid, error_msg = self.validate_change_type(change_type)
+                if not is_valid:
+                    return False, {"error": error_msg}
+                update_data["change_type"] = change_type
+
+            if sub_category is not None:
+                update_data["sub_category"] = sub_category
 
             if not update_data:
                 return False, {"error": "No fields to update"}
@@ -361,6 +391,7 @@ class ChangeService:
         self,
         project_id: str,
         format_type: str = "markdown",
+        group_by: str = "date",
     ) -> tuple[bool, dict[str, Any]]:
         """
         Generate a formatted changelog for a project.
@@ -368,6 +399,7 @@ class ChangeService:
         Args:
             project_id: UUID of the project
             format_type: Output format ("markdown" or "json")
+            group_by: Grouping strategy ("date" or "task")
 
         Returns:
             Tuple of (success, result_dict)
@@ -384,41 +416,143 @@ class ChangeService:
 
             changes = response.data if response.data else []
 
+            # For task grouping, fetch task details
+            tasks_map: dict[str, dict] = {}
+            if group_by == "task":
+                task_ids = list(set(c.get("task_id") for c in changes if c.get("task_id")))
+                if task_ids:
+                    tasks_response = (
+                        self.supabase_client.table("archon_tasks")
+                        .select("id, title, status, feature")
+                        .in_("id", task_ids)
+                        .execute()
+                    )
+                    if tasks_response.data:
+                        tasks_map = {t["id"]: t for t in tasks_response.data}
+
             if format_type == "json":
+                # For JSON format with task grouping, structure by task
+                if group_by == "task":
+                    grouped: dict[str, Any] = {"tasks": [], "unlinked": []}
+                    by_task: dict[str, list[dict]] = {}
+
+                    for change in changes:
+                        task_id = change.get("task_id")
+                        if task_id:
+                            if task_id not in by_task:
+                                by_task[task_id] = []
+                            by_task[task_id].append(change)
+                        else:
+                            grouped["unlinked"].append(change)
+
+                    for task_id, task_changes in by_task.items():
+                        task_info = tasks_map.get(task_id, {"id": task_id, "title": "Unknown Task"})
+                        # Collect all files affected across all changes for this task
+                        all_files = []
+                        for c in task_changes:
+                            all_files.extend(c.get("files_affected", []))
+
+                        grouped["tasks"].append({
+                            "task": task_info,
+                            "changes": task_changes,
+                            "files_affected": list(set(all_files)),
+                            "change_count": len(task_changes),
+                        })
+
+                    return True, {
+                        "project_id": project_id,
+                        "format": "json",
+                        "group_by": "task",
+                        "grouped": grouped,
+                        "count": len(changes),
+                    }
+
                 return True, {
                     "project_id": project_id,
                     "format": "json",
+                    "group_by": "date",
                     "changes": changes,
                     "count": len(changes),
                 }
 
-            # Format as markdown (Keep a Changelog style)
+            # Format as markdown
             lines = ["# Changelog", "", "All notable changes to this project.", ""]
 
-            # Group changes by date
-            changes_by_date: dict[str, list[dict]] = {}
-            for change in changes:
-                date_str = change["created_at"][:10]  # Extract YYYY-MM-DD
-                if date_str not in changes_by_date:
-                    changes_by_date[date_str] = []
-                changes_by_date[date_str].append(change)
+            if group_by == "task":
+                # Group by task
+                by_task: dict[str, list[dict]] = {}
+                unlinked: list[dict] = []
 
-            # Format each date section
-            for date_str in sorted(changes_by_date.keys(), reverse=True):
-                lines.append(f"## [{date_str}]")
-                lines.append("")
+                for change in changes:
+                    task_id = change.get("task_id")
+                    if task_id:
+                        if task_id not in by_task:
+                            by_task[task_id] = []
+                        by_task[task_id].append(change)
+                    else:
+                        unlinked.append(change)
 
-                date_changes = changes_by_date[date_str]
+                # Output tasks (sorted by most recent change)
+                task_order = sorted(
+                    by_task.keys(),
+                    key=lambda tid: max(c["created_at"] for c in by_task[tid]),
+                    reverse=True
+                )
 
-                # Group by type within each date
-                by_type: dict[str, list[dict]] = {}
-                for change in date_changes:
-                    ctype = change["change_type"]
-                    if ctype not in by_type:
-                        by_type[ctype] = []
-                    by_type[ctype].append(change)
+                for task_id in task_order:
+                    task_changes = by_task[task_id]
+                    task_info = tasks_map.get(task_id, {})
+                    task_title = task_info.get("title", "Unknown Task")
+                    task_status = task_info.get("status", "")
 
-                # Output in standard order
+                    # Get all files affected
+                    all_files = []
+                    for c in task_changes:
+                        all_files.extend(c.get("files_affected", []))
+                    unique_files = list(set(all_files))
+
+                    lines.append(f"## {task_title}")
+                    if task_status:
+                        lines.append(f"**Status:** {task_status}")
+                    lines.append(f"**Changes:** {len(task_changes)} | **Files:** {len(unique_files)}")
+                    lines.append("")
+
+                    # List changes under this task
+                    for change in task_changes:
+                        summary = change["summary"]
+                        ctype = change.get("change_type", "")
+                        lines.append(f"- [{ctype}] {summary}")
+                    lines.append("")
+
+                    # List files
+                    if unique_files:
+                        lines.append("<details><summary>Files affected</summary>")
+                        lines.append("")
+                        for f in sorted(unique_files):
+                            lines.append(f"- `{f}`")
+                        lines.append("")
+                        lines.append("</details>")
+                        lines.append("")
+
+                # Output unlinked changes
+                if unlinked:
+                    lines.append("## Other Changes")
+                    lines.append("")
+                    for change in unlinked:
+                        summary = change["summary"]
+                        ctype = change.get("change_type", "")
+                        lines.append(f"- [{ctype}] {summary}")
+                    lines.append("")
+
+            else:
+                # Original date-based grouping
+                changes_by_date: dict[str, list[dict]] = {}
+                for change in changes:
+                    date_str = change["created_at"][:10]
+                    if date_str not in changes_by_date:
+                        changes_by_date[date_str] = []
+                    changes_by_date[date_str].append(change)
+
                 type_labels = {
                     "feature": "Added",
                     "bugfix": "Fixed",
@@ -426,25 +560,42 @@ class ChangeService:
                     "docs": "Documentation",
                     "config": "Configuration",
                     "test": "Tests",
+                    "style": "Style",
+                    "perf": "Performance",
+                    "deps": "Dependencies",
+                    "ci": "CI/CD",
                 }
 
-                for ctype in ["feature", "bugfix", "refactor", "docs", "config", "test"]:
-                    if ctype in by_type:
-                        lines.append(f"### {type_labels.get(ctype, ctype.title())}")
-                        for change in by_type[ctype]:
-                            summary = change["summary"]
-                            commit = change.get("commit_sha")
-                            if commit:
-                                lines.append(f"- {summary} ({commit[:7]})")
-                            else:
-                                lines.append(f"- {summary}")
-                        lines.append("")
+                for date_str in sorted(changes_by_date.keys(), reverse=True):
+                    lines.append(f"## [{date_str}]")
+                    lines.append("")
+
+                    date_changes = changes_by_date[date_str]
+                    by_type: dict[str, list[dict]] = {}
+                    for change in date_changes:
+                        ctype = change["change_type"]
+                        if ctype not in by_type:
+                            by_type[ctype] = []
+                        by_type[ctype].append(change)
+
+                    for ctype in VALID_CHANGE_TYPES:
+                        if ctype in by_type:
+                            lines.append(f"### {type_labels.get(ctype, ctype.title())}")
+                            for change in by_type[ctype]:
+                                summary = change["summary"]
+                                commit = change.get("commit_sha")
+                                if commit:
+                                    lines.append(f"- {summary} ({commit[:7]})")
+                                else:
+                                    lines.append(f"- {summary}")
+                            lines.append("")
 
             markdown = "\n".join(lines)
 
             return True, {
                 "project_id": project_id,
                 "format": "markdown",
+                "group_by": group_by,
                 "changelog": markdown,
                 "count": len(changes),
             }
@@ -452,3 +603,130 @@ class ChangeService:
         except Exception as e:
             logger.error(f"Error generating changelog: {e}")
             return False, {"error": f"Error generating changelog: {str(e)}"}
+
+    def get_stats(
+        self,
+        project_id: str | None = None,
+        days: int = 30,
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Get change statistics for dashboard and analytics.
+
+        Args:
+            project_id: Optional filter by project
+            days: Number of days to include in trends (default 30)
+
+        Returns:
+            Tuple of (success, result_dict) with:
+            - by_type: Count of changes per type
+            - by_week: Count of changes per week
+            - by_project: Count of changes per project (if no project_id filter)
+            - total: Total change count
+        """
+        try:
+            from datetime import timedelta
+
+            # Calculate date range
+            now = datetime.now()
+            start_date = (now - timedelta(days=days)).isoformat()
+
+            # Base query with date filter
+            query = (
+                self.supabase_client.table("archon_changes")
+                .select("id, change_type, project_id, created_at")
+                .gte("created_at", start_date)
+            )
+
+            if project_id:
+                query = query.eq("project_id", project_id)
+
+            response = query.order("created_at", desc=True).execute()
+            changes = response.data if response.data else []
+
+            # Calculate by_type
+            by_type: dict[str, int] = {}
+            for change_type in VALID_CHANGE_TYPES:
+                by_type[change_type] = 0
+
+            for change in changes:
+                ctype = change.get("change_type")
+                if ctype in by_type:
+                    by_type[ctype] += 1
+
+            # Calculate by_week
+            by_week: list[dict[str, Any]] = []
+            week_counts: dict[str, int] = {}
+
+            for change in changes:
+                change_date = datetime.fromisoformat(change["created_at"].replace("Z", "+00:00"))
+                # Get Monday of that week
+                week_start = change_date - timedelta(days=change_date.weekday())
+                week_key = week_start.strftime("%Y-%m-%d")
+                week_counts[week_key] = week_counts.get(week_key, 0) + 1
+
+            # Sort weeks and format
+            for week_key in sorted(week_counts.keys()):
+                by_week.append({
+                    "week": week_key,
+                    "count": week_counts[week_key],
+                })
+
+            # Calculate by_project (only if not filtering by project)
+            by_project: list[dict[str, Any]] = []
+            if not project_id:
+                project_counts: dict[str, int] = {}
+                for change in changes:
+                    pid = change.get("project_id")
+                    if pid:
+                        project_counts[pid] = project_counts.get(pid, 0) + 1
+                    else:
+                        project_counts["unassigned"] = project_counts.get("unassigned", 0) + 1
+
+                # Sort by count descending
+                for pid, count in sorted(project_counts.items(), key=lambda x: x[1], reverse=True):
+                    by_project.append({
+                        "project_id": pid if pid != "unassigned" else None,
+                        "count": count,
+                    })
+
+            # Calculate recent trend (last 7 days vs previous 7 days)
+            seven_days_ago = now - timedelta(days=7)
+            fourteen_days_ago = now - timedelta(days=14)
+
+            current_week = 0
+            previous_week = 0
+
+            for change in changes:
+                change_date = datetime.fromisoformat(change["created_at"].replace("Z", "+00:00"))
+                # Make comparison timezone-naive
+                change_date_naive = change_date.replace(tzinfo=None)
+                if change_date_naive >= seven_days_ago:
+                    current_week += 1
+                elif change_date_naive >= fourteen_days_ago:
+                    previous_week += 1
+
+            percent_change = (
+                100 if previous_week == 0 and current_week > 0
+                else 0 if previous_week == 0
+                else round(((current_week - previous_week) / previous_week) * 100)
+            )
+
+            result = {
+                "by_type": by_type,
+                "by_week": by_week,
+                "by_project": by_project,
+                "total": len(changes),
+                "trend": {
+                    "current_week": current_week,
+                    "previous_week": previous_week,
+                    "percent_change": percent_change,
+                },
+                "days": days,
+            }
+
+            logger.debug(f"Stats calculated | total={len(changes)} | days={days}")
+            return True, result
+
+        except Exception as e:
+            logger.error(f"Error getting change stats: {e}")
+            return False, {"error": f"Error getting change stats: {str(e)}"}

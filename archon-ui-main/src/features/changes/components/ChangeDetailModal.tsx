@@ -1,38 +1,48 @@
 /**
  * ChangeDetailModal Component
  *
- * Modal dialog showing full details of a change entry.
+ * Modal dialog showing full details of a change entry with inline editing.
  */
 
 import {
   Bug,
   Calendar,
+  Check,
   ChevronDown,
   ChevronRight,
+  Edit2,
   ExternalLink,
   FileCode,
   FileText,
   FolderOpen,
+  GitBranch,
   GitCommit,
+  Loader2,
+  Package,
+  Palette,
   Settings,
   Sparkles,
   TestTube,
+  Wand2,
   Wrench,
   X,
+  Zap,
 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Button, Card } from "../../ui/primitives";
 import * as Dialog from "@radix-ui/react-dialog";
 import { cn } from "../../ui/primitives/styles";
 import type { Change, ChangeType } from "../types";
-import { CHANGE_TYPE_CONFIG } from "../types";
+import { CHANGE_TYPES, CHANGE_TYPE_CONFIG } from "../types";
+import { changeService } from "../services";
 
 export interface ChangeDetailModalProps {
   change: Change | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   githubRepo?: string; // Optional GitHub repo URL for commit links
+  onUpdate?: (updatedChange: Change) => void; // Callback when change is updated
 }
 
 // Icon mapping for change types
@@ -43,6 +53,10 @@ const CHANGE_TYPE_ICONS: Record<ChangeType, React.ReactNode> = {
   docs: <FileText className="w-5 h-5" />,
   config: <Settings className="w-5 h-5" />,
   test: <TestTube className="w-5 h-5" />,
+  style: <Palette className="w-5 h-5" />,
+  perf: <Zap className="w-5 h-5" />,
+  deps: <Package className="w-5 h-5" />,
+  ci: <GitBranch className="w-5 h-5" />,
 };
 
 // Format date for display
@@ -63,14 +77,92 @@ export const ChangeDetailModal: React.FC<ChangeDetailModalProps> = ({
   open,
   onOpenChange,
   githubRepo,
+  onUpdate,
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [editedType, setEditedType] = useState<ChangeType | null>(null);
+  const [editedSubCategory, setEditedSubCategory] = useState<string>("");
+  const [suggestionConfidence, setSuggestionConfidence] = useState<number | null>(null);
+  const [suggestionReasoning, setSuggestionReasoning] = useState<string | null>(null);
+
+  // Reset edit state when change changes or modal closes
+  const resetEditState = useCallback(() => {
+    setIsEditing(false);
+    setEditedType(null);
+    setEditedSubCategory("");
+    setSuggestionConfidence(null);
+    setSuggestionReasoning(null);
+  }, []);
+
+  // Initialize edit state when entering edit mode
+  const handleStartEdit = useCallback(() => {
+    if (change) {
+      setEditedType(change.change_type);
+      setEditedSubCategory(change.sub_category || "");
+      setIsEditing(true);
+    }
+  }, [change]);
+
+  // Save changes
+  const handleSave = useCallback(async () => {
+    if (!change || !editedType) return;
+
+    setIsSaving(true);
+    try {
+      const updatedChange = await changeService.updateChange(change.id, {
+        change_type: editedType,
+        sub_category: editedSubCategory.trim() || undefined,
+      });
+      onUpdate?.(updatedChange);
+      resetEditState();
+    } catch (error) {
+      console.error("Failed to update change:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [change, editedType, editedSubCategory, onUpdate, resetEditState]);
+
+  // Cancel editing
+  const handleCancel = useCallback(() => {
+    resetEditState();
+  }, [resetEditState]);
+
+  // Suggest category based on files and summary
+  const handleSuggest = useCallback(async () => {
+    if (!change) return;
+
+    setIsSuggesting(true);
+    setSuggestionConfidence(null);
+    setSuggestionReasoning(null);
+
+    try {
+      const suggestion = await changeService.suggestCategory({
+        file_paths: change.files_affected || [],
+        commit_message: change.summary,
+      });
+
+      setEditedType(suggestion.category as ChangeType);
+      if (suggestion.sub_category) {
+        setEditedSubCategory(suggestion.sub_category);
+      }
+      setSuggestionConfidence(suggestion.confidence);
+      setSuggestionReasoning(suggestion.reasoning);
+    } catch (error) {
+      console.error("Failed to get category suggestion:", error);
+    } finally {
+      setIsSuggesting(false);
+    }
+  }, [change]);
 
   if (!change) return null;
 
-  const typeConfig = CHANGE_TYPE_CONFIG[change.change_type];
-  const icon = CHANGE_TYPE_ICONS[change.change_type];
+  const currentType = isEditing && editedType ? editedType : change.change_type;
+  const typeConfig = CHANGE_TYPE_CONFIG[currentType];
+  const icon = CHANGE_TYPE_ICONS[currentType];
   const hasDetails = change.details && Object.keys(change.details).length > 0;
   const filesAffected = change.files_affected || [];
   const hasFiles = filesAffected.length > 0;
@@ -93,42 +185,168 @@ export const ChangeDetailModal: React.FC<ChangeDetailModalProps> = ({
               {/* Type icon */}
               <div
                 className={cn(
-                  "flex items-center justify-center w-12 h-12 rounded-xl backdrop-blur-md",
+                  "relative flex items-center justify-center w-12 h-12 rounded-xl backdrop-blur-md",
                   "border border-current/20",
                   typeConfig.color,
                 )}
-                style={{
-                  backgroundColor: "currentColor",
-                  opacity: 0.15,
-                }}
               >
-                <span className={typeConfig.color}>{icon}</span>
+                <div className="absolute inset-0 rounded-xl bg-current opacity-15" />
+                <span className={cn("relative z-10", typeConfig.color)}>{icon}</span>
               </div>
 
               {/* Title and type badge */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-2">
-                  <span
-                    className={cn(
-                      "px-2.5 py-1 rounded-full text-xs font-medium uppercase tracking-wide",
-                      "backdrop-blur-md border border-current/20",
-                      typeConfig.color,
-                    )}
-                  >
-                    {typeConfig.label}
-                  </span>
+                  {isEditing ? (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        {/* Category selector dropdown */}
+                        <select
+                          value={editedType || ""}
+                          onChange={(e) => {
+                            setEditedType(e.target.value as ChangeType);
+                            setSuggestionConfidence(null);
+                            setSuggestionReasoning(null);
+                          }}
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg text-xs font-medium uppercase tracking-wide",
+                            "bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600",
+                            "text-gray-900 dark:text-white",
+                            "focus:outline-none focus:ring-2 focus:ring-cyan-500",
+                          )}
+                        >
+                          {CHANGE_TYPES.map((type) => (
+                            <option key={type} value={type}>
+                              {CHANGE_TYPE_CONFIG[type].label}
+                            </option>
+                          ))}
+                        </select>
+                        {/* Sub-category input */}
+                        <input
+                          type="text"
+                          value={editedSubCategory}
+                          onChange={(e) => setEditedSubCategory(e.target.value)}
+                          placeholder="Sub-category (optional)"
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg text-xs",
+                            "bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600",
+                            "text-gray-900 dark:text-white placeholder-gray-500",
+                            "focus:outline-none focus:ring-2 focus:ring-cyan-500",
+                            "w-32",
+                          )}
+                        />
+                        {/* Suggest button */}
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={handleSuggest}
+                          disabled={isSuggesting}
+                          className="gap-1 text-violet-500 hover:text-violet-600 hover:bg-violet-500/10"
+                          title="Auto-detect category"
+                        >
+                          {isSuggesting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Wand2 className="w-3.5 h-3.5" />
+                          )}
+                          Suggest
+                        </Button>
+                      </div>
+                      {/* Confidence indicator */}
+                      {suggestionConfidence !== null && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-500">Confidence:</span>
+                            <span
+                              className={cn(
+                                "font-medium",
+                                suggestionConfidence >= 0.8
+                                  ? "text-emerald-500"
+                                  : suggestionConfidence >= 0.5
+                                    ? "text-amber-500"
+                                    : "text-rose-500",
+                              )}
+                            >
+                              {Math.round(suggestionConfidence * 100)}%
+                            </span>
+                          </div>
+                          {suggestionReasoning && (
+                            <span className="text-gray-400 truncate max-w-[200px]" title={suggestionReasoning}>
+                              {suggestionReasoning}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <span
+                        className={cn(
+                          "relative px-2.5 py-1 rounded-full text-xs font-medium uppercase tracking-wide",
+                          "backdrop-blur-md border border-current/20",
+                          typeConfig.color,
+                        )}
+                      >
+                        <span className="absolute inset-0 rounded-full bg-current opacity-15" />
+                        <span className={cn("relative z-10", typeConfig.color)}>{typeConfig.label}</span>
+                      </span>
+                      {change.sub_category && (
+                        <span className="px-2 py-0.5 rounded-md text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                          {change.sub_category}
+                        </span>
+                      )}
+                    </>
+                  )}
                 </div>
                 <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-white">
                   {change.summary}
                 </Dialog.Title>
               </div>
 
-              {/* Close button */}
-              <Dialog.Close asChild>
-                <Button variant="ghost" size="icon" className="shrink-0">
-                  <X className="w-5 h-5" />
-                </Button>
-              </Dialog.Close>
+              {/* Action buttons */}
+              <div className="flex items-center gap-1 shrink-0">
+                {isEditing ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleCancel}
+                      disabled={isSaving}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleSave}
+                      disabled={isSaving}
+                      className="text-cyan-500 hover:text-cyan-600"
+                    >
+                      {isSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleStartEdit}
+                    className="text-gray-500 hover:text-cyan-500"
+                    title="Edit category"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </Button>
+                )}
+                <Dialog.Close asChild>
+                  <Button variant="ghost" size="icon" className="shrink-0">
+                    <X className="w-5 h-5" />
+                  </Button>
+                </Dialog.Close>
+              </div>
             </div>
 
             {/* Content - scrollable */}

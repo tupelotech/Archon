@@ -4,7 +4,7 @@
  * Displays a single change entry in the timeline.
  */
 
-import { Bug, FileText, GitCommit, Settings, Sparkles, TestTube, Wrench } from "lucide-react";
+import { Bug, FileText, GitBranch, GitCommit, Package, Palette, Settings, Sparkles, TestTube, Wrench, Zap } from "lucide-react";
 import type React from "react";
 import { Card } from "../../ui/primitives";
 import { cn } from "../../ui/primitives/styles";
@@ -25,6 +25,10 @@ const CHANGE_TYPE_ICONS: Record<ChangeType, React.ReactNode> = {
   docs: <FileText className="w-3.5 h-3.5" />,
   config: <Settings className="w-3.5 h-3.5" />,
   test: <TestTube className="w-3.5 h-3.5" />,
+  style: <Palette className="w-3.5 h-3.5" />,
+  perf: <Zap className="w-3.5 h-3.5" />,
+  deps: <Package className="w-3.5 h-3.5" />,
+  ci: <GitBranch className="w-3.5 h-3.5" />,
 };
 
 // Format relative time
@@ -78,17 +82,14 @@ export const ChangeCard: React.FC<ChangeCardProps> = ({ change, onClick, compact
         {/* Change type indicator */}
         <div
           className={cn(
-            "flex items-center justify-center rounded-lg backdrop-blur-md",
+            "relative flex items-center justify-center rounded-lg backdrop-blur-md",
             "border border-current/20",
             compact ? "w-8 h-8" : "w-10 h-10",
             typeConfig.color,
           )}
-          style={{
-            backgroundColor: "currentColor",
-            opacity: 0.15,
-          }}
         >
-          <span className={typeConfig.color}>{icon}</span>
+          <div className="absolute inset-0 rounded-lg bg-current opacity-15" />
+          <span className={cn("relative z-10", typeConfig.color)}>{icon}</span>
         </div>
 
         {/* Content */}
@@ -97,16 +98,13 @@ export const ChangeCard: React.FC<ChangeCardProps> = ({ change, onClick, compact
           <div className="flex items-center gap-2 mb-1">
             <span
               className={cn(
-                "px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wide",
+                "relative px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wide",
                 "backdrop-blur-md border border-current/20",
                 typeConfig.color,
               )}
-              style={{
-                backgroundColor: "currentColor",
-                opacity: 0.15,
-              }}
             >
-              <span className={typeConfig.color}>{typeConfig.label}</span>
+              <span className="absolute inset-0 rounded-full bg-current opacity-15" />
+              <span className={cn("relative z-10", typeConfig.color)}>{typeConfig.label}</span>
             </span>
 
             <span className="text-xs text-gray-500 dark:text-gray-400">

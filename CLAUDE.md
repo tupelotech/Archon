@@ -20,8 +20,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. manage_task("update", task_id="...", status="doing")  # Mark as in-progress
 3. [Do the work]
 4. manage_task("update", task_id="...", status="done")   # Mark complete
-5. log_change(change_type, summary, project_id, files_affected)  # Log the change
+5. log_change(summary, project_id=..., task_id=..., files_affected=[...])  # Log the change
 ```
+
+**Important**: Always include `task_id` when logging changes to enable task-grouped changelog views.
+
+### Change Tracking Best Practices
+
+**Category Auto-Detection**: The `change_type` parameter is optional - it's automatically detected from the summary and files. Only specify it to override the detection.
+
+**Task Linking**: Link changes to tasks using `task_id` for meaningful changelog grouping:
+```
+log_change("Implemented login form validation", task_id="task-uuid", files_affected=["src/auth.py"])
+```
+
+**Changelog Views**: Use `get_project_changelog(project_id, group_by="task")` to see changes grouped by task. This consolidates per-file entries into task-level summaries with expandable file details.
 
 ### When MCP Tools Fail
 

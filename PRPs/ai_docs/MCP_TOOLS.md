@@ -45,22 +45,27 @@ Common preferences:
 
 Track development changes made during AI-assisted coding sessions for changelog generation and auditing.
 
-- `archon:log_change` - Record a new change entry
-  - Args: change_type (required), summary (required), project_id, session_id, details, files_affected, commit_sha
-  - Change types: "feature", "bugfix", "refactor", "docs", "config", "test"
+- `archon:log_change` - Record a new change entry (category auto-detected from summary/files)
+  - Args: summary (required), change_type (optional - auto-detected), project_id, task_id, session_id, details, files_affected, commit_sha, sub_category
+  - Change types: "feature", "bugfix", "refactor", "docs", "config", "test", "style", "perf", "deps", "ci"
+  - Note: `task_id` links changes to tasks for grouped changelog view
 - `archon:find_changes` - Search and filter changes, or get specific change by ID
   - Args: change_id, project_id, change_type, query, date_from, date_to, page, per_page
+- `archon:manage_change` - Update or delete changes
+  - Args: action ("update" | "delete"), change_id, project_id, task_id, summary, files_affected, commit_sha, change_type, sub_category
 - `archon:get_project_changelog` - Generate formatted changelog for a project
   - Args: project_id (required), format ("markdown" or "json")
+- `archon:suggest_category` - Get category suggestion based on file patterns and commit message
+  - Args: file_paths, commit_message, tool_context
 
 Example usage:
 ```
-# Log a new feature
-log_change("feature", "Added user authentication with JWT", project_id="p-123")
+# Log a change - category auto-detected
+log_change("Added user authentication with JWT", project_id="p-123")
 
-# Log a bug fix with affected files
-log_change("bugfix", "Fixed null pointer in user service",
-           files_affected=["src/user.py"], commit_sha="abc1234")
+# Log with explicit category and task link
+log_change("Fixed null pointer in user service", change_type="bugfix",
+           task_id="t-456", files_affected=["src/user.py"])
 
 # Find all bug fixes for a project
 find_changes(project_id="p-123", change_type="bugfix")

@@ -5,11 +5,15 @@
 
 import { callAPIWithETag } from "../../shared/api/apiClient";
 import type {
+  CategorySuggestion,
   Change,
   ChangeFilters,
   ChangelogResponse,
   ChangesListResponse,
+  ChangeStats,
   CreateChangeRequest,
+  SuggestCategoryRequest,
+  UpdateChangeRequest,
 } from "../types";
 
 export const changeService = {
@@ -85,6 +89,22 @@ export const changeService = {
   },
 
   /**
+   * Update a change entry
+   */
+  async updateChange(changeId: string, updates: UpdateChangeRequest): Promise<Change> {
+    try {
+      const response = await callAPIWithETag<{ message: string; change: Change }>(`/api/changes/${changeId}`, {
+        method: "PUT",
+        body: JSON.stringify(updates),
+      });
+      return response.change;
+    } catch (error) {
+      console.error(`Failed to update change ${changeId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
    * Delete a change entry
    */
   async deleteChange(changeId: string): Promise<void> {
@@ -109,6 +129,39 @@ export const changeService = {
       return response;
     } catch (error) {
       console.error(`Failed to get changelog for project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get category suggestion based on file paths and commit message
+   */
+  async suggestCategory(request: SuggestCategoryRequest): Promise<CategorySuggestion> {
+    try {
+      const response = await callAPIWithETag<CategorySuggestion>("/api/changes/suggest-category", {
+        method: "POST",
+        body: JSON.stringify(request),
+      });
+      return response;
+    } catch (error) {
+      console.error("Failed to get category suggestion:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get change statistics for dashboard and analytics
+   */
+  async getStats(projectId?: string, days = 30): Promise<ChangeStats> {
+    try {
+      const params = new URLSearchParams();
+      if (projectId) params.set("project_id", projectId);
+      params.set("days", String(days));
+
+      const response = await callAPIWithETag<ChangeStats>(`/api/changes/stats?${params.toString()}`);
+      return response;
+    } catch (error) {
+      console.error("Failed to get change stats:", error);
       throw error;
     }
   },

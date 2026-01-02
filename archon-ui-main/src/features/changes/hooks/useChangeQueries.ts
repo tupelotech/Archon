@@ -8,7 +8,7 @@ import { DISABLED_QUERY_KEY, STALE_TIMES } from "../../shared/config/queryPatter
 import { useSmartPolling } from "../../shared/hooks";
 import { useToast } from "../../shared/hooks/useToast";
 import { changeService } from "../services/changeService";
-import type { Change, ChangeFilters, ChangesListResponse, CreateChangeRequest } from "../types";
+import type { Change, ChangeFilters, ChangesListResponse, ChangeStats, CreateChangeRequest } from "../types";
 
 // Query keys factory for changes
 export const changeKeys = {
@@ -18,6 +18,7 @@ export const changeKeys = {
   detail: (id: string) => [...changeKeys.all, "detail", id] as const,
   byProject: (projectId: string) => ["projects", projectId, "changes"] as const,
   changelog: (projectId: string, format: string) => ["projects", projectId, "changelog", format] as const,
+  stats: (projectId?: string, days?: number) => [...changeKeys.all, "stats", { projectId, days }] as const,
 };
 
 /**
@@ -83,6 +84,21 @@ export function useProjectChangelog(
       return changeService.getProjectChangelog(projectId, format);
     },
     enabled: !!projectId && enabled,
+    staleTime: STALE_TIMES.normal,
+  });
+}
+
+/**
+ * Fetch change statistics for dashboard and analytics
+ */
+export function useChangeStats(projectId?: string, days = 30, enabled = true) {
+  const { refetchInterval } = useSmartPolling(60_000); // 60s polling for stats
+
+  return useQuery<ChangeStats>({
+    queryKey: changeKeys.stats(projectId, days),
+    queryFn: () => changeService.getStats(projectId, days),
+    enabled,
+    refetchInterval,
     staleTime: STALE_TIMES.normal,
   });
 }

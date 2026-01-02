@@ -872,7 +872,7 @@ END $$;
 
 -- Create change_type enum for change tracking
 DO $$ BEGIN
-    CREATE TYPE change_type AS ENUM ('feature', 'bugfix', 'refactor', 'docs', 'config', 'test');
+    CREATE TYPE change_type AS ENUM ('feature', 'bugfix', 'refactor', 'docs', 'config', 'test', 'style', 'perf', 'deps', 'ci');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
@@ -975,6 +975,7 @@ CREATE TABLE IF NOT EXISTS archon_changes (
     details JSONB DEFAULT '{}'::jsonb,
     files_affected TEXT[] DEFAULT ARRAY[]::TEXT[],
     commit_sha TEXT,
+    sub_category TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -983,6 +984,7 @@ CREATE INDEX IF NOT EXISTS idx_archon_changes_project ON archon_changes(project_
 CREATE INDEX IF NOT EXISTS idx_archon_changes_created ON archon_changes(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_archon_changes_type ON archon_changes(change_type);
 CREATE INDEX IF NOT EXISTS idx_archon_changes_session ON archon_changes(session_id);
+CREATE INDEX IF NOT EXISTS idx_archon_changes_sub_category ON archon_changes(sub_category) WHERE sub_category IS NOT NULL;
 
 -- Apply triggers to tables
 CREATE OR REPLACE TRIGGER update_archon_projects_updated_at

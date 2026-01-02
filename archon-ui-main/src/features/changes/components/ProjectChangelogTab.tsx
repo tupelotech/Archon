@@ -7,10 +7,11 @@
 import { Download, FileText, Loader2 } from "lucide-react";
 import type React from "react";
 import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, Card } from "../../ui/primitives";
-import { cn } from "../../ui/primitives/styles";
-import { useProjectChangelog, useProjectChanges } from "../hooks";
+import { useProjectChangelog, useProjectChanges, changeKeys } from "../hooks";
 import type { Change } from "../types";
+import { CategoryStatsWidget } from "./CategoryStatsWidget";
 import { ChangeCard } from "./ChangeCard";
 import { ChangeDetailModal } from "./ChangeDetailModal";
 
@@ -20,6 +21,7 @@ export interface ProjectChangelogTabProps {
 }
 
 export const ProjectChangelogTab: React.FC<ProjectChangelogTabProps> = ({ projectId, githubRepo }) => {
+  const queryClient = useQueryClient();
   const [selectedChange, setSelectedChange] = useState<Change | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -35,6 +37,17 @@ export const ProjectChangelogTab: React.FC<ProjectChangelogTabProps> = ({ projec
     setSelectedChange(change);
     setIsModalOpen(true);
   }, []);
+
+  const handleChangeUpdate = useCallback(
+    (updatedChange: Change) => {
+      // Update selected change in local state
+      setSelectedChange(updatedChange);
+      // Invalidate changes queries to refetch
+      queryClient.invalidateQueries({ queryKey: changeKeys.byProject(projectId) });
+      queryClient.invalidateQueries({ queryKey: changeKeys.changelog(projectId, "markdown") });
+    },
+    [queryClient, projectId],
+  );
 
   const handleExport = useCallback(() => {
     if (!changelogData?.changelog) return;
@@ -107,6 +120,9 @@ export const ProjectChangelogTab: React.FC<ProjectChangelogTabProps> = ({ projec
         </Button>
       </div>
 
+      {/* Category statistics */}
+      <CategoryStatsWidget changes={changes} />
+
       {/* Changes list */}
       <div className="space-y-3">
         {changes.map((change) => (
@@ -120,6 +136,7 @@ export const ProjectChangelogTab: React.FC<ProjectChangelogTabProps> = ({ projec
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         githubRepo={githubRepo}
+        onUpdate={handleChangeUpdate}
       />
     </div>
   );
