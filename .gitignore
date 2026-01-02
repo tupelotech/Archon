@@ -22,3 +22,7 @@ release-notes-*.md
 volumes/db-data/
 supabase-db-data/
 archon-supabase-db-data/
+
+# Claude Code hook logs (generated artifacts)
+.claude/change-log.jsonl
+.claude/session-init.log
