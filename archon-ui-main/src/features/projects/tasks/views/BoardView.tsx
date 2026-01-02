@@ -23,7 +23,16 @@ export const BoardView = ({
 
   // Simple task filtering for board view
   const getTasksByStatus = (status: Task["status"]) => {
-    return tasks.filter((task) => task.status === status).sort((a, b) => a.task_order - b.task_order);
+    const filtered = tasks.filter((task) => task.status === status);
+
+    // Done tasks: sort by updated_at (most recent first)
+    // Other statuses: sort by task_order
+    if (status === "done") {
+      return filtered.sort((a, b) =>
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
+    }
+    return filtered.sort((a, b) => a.task_order - b.task_order);
   };
 
   // Column configuration

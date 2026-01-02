@@ -248,9 +248,15 @@ export const TableView = ({
       groups[task.status].push(task);
     });
 
-    // Sort each group by task_order
+    // Sort each group: done by updated_at (most recent first), others by task_order
     Object.keys(groups).forEach((status) => {
-      groups[status as Task["status"]].sort((a, b) => a.task_order - b.task_order);
+      if (status === "done") {
+        groups[status as Task["status"]].sort((a, b) =>
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        );
+      } else {
+        groups[status as Task["status"]].sort((a, b) => a.task_order - b.task_order);
+      }
     });
 
     return groups;
