@@ -50,6 +50,7 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
   // State management
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState("tasks");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<"horizontal" | "sidebar">("horizontal");
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -94,6 +95,17 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
     },
     [selectedProject?.id, navigate],
   );
+
+  // Handle task click from changelog - switch to tasks tab and select task
+  const handleTaskClick = useCallback((taskId: string) => {
+    setSelectedTaskId(taskId);
+    setActiveTab("tasks");
+  }, []);
+
+  // Clear selectedTaskId after task is opened
+  const handleTaskSelected = useCallback(() => {
+    setSelectedTaskId(null);
+  }, []);
 
   // Auto-select project based on URL or default to leftmost
   useEffect(() => {
@@ -231,9 +243,9 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
               {/* Tab content */}
               <div>
                 {activeTab === "docs" && <DocsTab project={selectedProject} />}
-                {activeTab === "tasks" && <TasksTab projectId={selectedProject.id} />}
+                {activeTab === "tasks" && <TasksTab projectId={selectedProject.id} selectedTaskId={selectedTaskId} onTaskSelected={handleTaskSelected} />}
                 {activeTab === "changelog" && (
-                  <ProjectChangelogTab projectId={selectedProject.id} githubRepo={selectedProject.github_repo} />
+                  <ProjectChangelogTab projectId={selectedProject.id} githubRepo={selectedProject.github_repo} onTaskClick={handleTaskClick} />
                 )}
               </div>
             </motion.div>
@@ -315,9 +327,9 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
                 {/* Tab Content */}
                 <div>
                   {activeTab === "docs" && <DocsTab project={selectedProject} />}
-                  {activeTab === "tasks" && <TasksTab projectId={selectedProject.id} />}
+                  {activeTab === "tasks" && <TasksTab projectId={selectedProject.id} selectedTaskId={selectedTaskId} onTaskSelected={handleTaskSelected} />}
                   {activeTab === "changelog" && (
-                    <ProjectChangelogTab projectId={selectedProject.id} githubRepo={selectedProject.github_repo} />
+                    <ProjectChangelogTab projectId={selectedProject.id} githubRepo={selectedProject.github_repo} onTaskClick={handleTaskClick} />
                   )}
                 </div>
               </>

@@ -4,7 +4,7 @@
  * Displays a single change entry in the timeline.
  */
 
-import { Bug, FileText, GitBranch, GitCommit, Package, Palette, Settings, Sparkles, TestTube, Wrench, Zap } from "lucide-react";
+import { Bug, CheckSquare, FileText, GitBranch, GitCommit, Package, Palette, Settings, Sparkles, TestTube, Wrench, Zap } from "lucide-react";
 import type React from "react";
 import { Card } from "../../ui/primitives";
 import { cn } from "../../ui/primitives/styles";
@@ -14,6 +14,7 @@ import { CHANGE_TYPE_CONFIG } from "../types";
 export interface ChangeCardProps {
   change: Change;
   onClick?: (change: Change) => void;
+  onTaskClick?: (taskId: string) => void;
   compact?: boolean;
 }
 
@@ -48,7 +49,7 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export const ChangeCard: React.FC<ChangeCardProps> = ({ change, onClick, compact = false }) => {
+export const ChangeCard: React.FC<ChangeCardProps> = ({ change, onClick, onTaskClick, compact = false }) => {
   const typeConfig = CHANGE_TYPE_CONFIG[change.change_type];
   const icon = CHANGE_TYPE_ICONS[change.change_type];
 
@@ -60,6 +61,13 @@ export const ChangeCard: React.FC<ChangeCardProps> = ({ change, onClick, compact
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       onClick?.(change);
+    }
+  };
+
+  const handleTaskClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (change.task_id && onTaskClick) {
+      onTaskClick(change.task_id);
     }
   };
 
@@ -110,6 +118,23 @@ export const ChangeCard: React.FC<ChangeCardProps> = ({ change, onClick, compact
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {formatRelativeTime(change.created_at)}
             </span>
+
+            {change.task_id && onTaskClick && (
+              <button
+                type="button"
+                onClick={handleTaskClick}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium",
+                  "bg-violet-500/20 text-violet-400 border border-violet-400/30",
+                  "hover:bg-violet-500/30 hover:border-violet-400/50 transition-colors",
+                  "cursor-pointer"
+                )}
+                title="View linked task"
+              >
+                <CheckSquare className="w-3 h-3" />
+                <span>Task</span>
+              </button>
+            )}
 
             {change.commit_sha && (
               <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 ml-auto">

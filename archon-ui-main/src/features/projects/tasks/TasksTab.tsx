@@ -1,5 +1,5 @@
 import { LayoutGrid, Plus, Table } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { DeleteConfirmModal } from "../../ui/components/DeleteConfirmModal";
@@ -13,9 +13,11 @@ import { BoardView, TableView } from "./views";
 
 interface TasksTabProps {
   projectId: string;
+  selectedTaskId?: string | null;
+  onTaskSelected?: () => void;
 }
 
-export const TasksTab = ({ projectId }: TasksTabProps) => {
+export const TasksTab = ({ projectId, selectedTaskId, onTaskSelected }: TasksTabProps) => {
   const [viewMode, setViewMode] = useState<"table" | "board">("board");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,10 +32,21 @@ export const TasksTab = ({ projectId }: TasksTabProps) => {
   const deleteTaskMutation = useDeleteTask(projectId);
 
   // Modal management functions
-  const openEditModal = (task: Task) => {
+  const openEditModal = useCallback((task: Task) => {
     setEditingTask(task);
     setIsModalOpen(true);
-  };
+  }, []);
+
+  // Auto-open task when selectedTaskId is provided (e.g., from changelog)
+  useEffect(() => {
+    if (selectedTaskId && tasks.length > 0) {
+      const task = tasks.find((t) => t.id === selectedTaskId);
+      if (task) {
+        openEditModal(task);
+        onTaskSelected?.();
+      }
+    }
+  }, [selectedTaskId, tasks, onTaskSelected, openEditModal]);
 
   const openCreateModal = () => {
     setEditingTask(null);

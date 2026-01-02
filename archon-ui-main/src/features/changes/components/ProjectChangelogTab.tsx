@@ -18,9 +18,10 @@ import { ChangeDetailModal } from "./ChangeDetailModal";
 export interface ProjectChangelogTabProps {
   projectId: string;
   githubRepo?: string;
+  onTaskClick?: (taskId: string) => void;
 }
 
-export const ProjectChangelogTab: React.FC<ProjectChangelogTabProps> = ({ projectId, githubRepo }) => {
+export const ProjectChangelogTab: React.FC<ProjectChangelogTabProps> = ({ projectId, githubRepo, onTaskClick }) => {
   const queryClient = useQueryClient();
   const [selectedChange, setSelectedChange] = useState<Change | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -126,7 +127,7 @@ export const ProjectChangelogTab: React.FC<ProjectChangelogTabProps> = ({ projec
       {/* Changes list */}
       <div className="space-y-3">
         {changes.map((change) => (
-          <ChangeCard key={change.id} change={change} onClick={handleChangeClick} />
+          <ChangeCard key={change.id} change={change} onClick={handleChangeClick} onTaskClick={onTaskClick} />
         ))}
       </div>
 
