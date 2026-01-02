@@ -102,3 +102,19 @@ All containers use `archon-` prefix to avoid collisions:
 - Archon containers: `archon-server`, `archon-mcp`, `archon-ui`
 - Networks: `archon-network`, `archon-supabase-network`
 - Volumes: `archon-supabase-db-data`
+
+## Known Issues
+
+### MCP Session ID Error After Server Restart
+
+**Symptom**: After restarting `archon-mcp`, MCP tool calls fail with "No valid session ID provided"
+
+**Cause**: FastMCP's streamable HTTP transport stores sessions in memory. When the server restarts, sessions are invalidated but clients (Claude Code, Cursor) cache stale session IDs and don't auto-reconnect.
+
+**Workaround**: Restart Claude Code or disconnect/reconnect the MCP server in settings.
+
+**References**:
+- [Cursor Issue #3640](https://github.com/cursor/cursor/issues/3640)
+- [Python SDK Issue #880](https://github.com/modelcontextprotocol/python-sdk/issues/880)
+
+**Future Fix**: Implement Redis-backed session persistence or switch to SSE transport.

@@ -2,6 +2,36 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Archon Task Management (CRITICAL)
+
+**AI agents MUST use Archon MCP tools for task tracking when working on this project.**
+
+### Session Start Checklist
+
+1. **Check MCP connection**: If MCP tools fail with "No valid session ID", restart Claude Code or reconnect MCP in settings (known FastMCP limitation after server restart)
+2. **Get user preferences**: Call `get_user_preferences()` to discover changelog conventions
+3. **Check current tasks**: Call `find_tasks(filter_by="status", filter_value="doing")` to see in-progress work
+4. **Review todo tasks**: Call `find_tasks(filter_by="status", filter_value="todo")` to see pending work
+
+### Task Workflow
+
+```
+1. find_tasks(task_id="...") or find_tasks(query="...")  # Get task details
+2. manage_task("update", task_id="...", status="doing")  # Mark as in-progress
+3. [Do the work]
+4. manage_task("update", task_id="...", status="done")   # Mark complete
+5. log_change(change_type, summary, project_id, files_affected)  # Log the change
+```
+
+### When MCP Tools Fail
+
+If MCP tools return errors, **investigate the root cause** rather than falling back to curl/REST API. Common issues:
+- **Session ID error**: Restart Claude Code or reconnect MCP server
+- **Connection refused**: Check if `archon-mcp` container is running
+- **Timeout**: Check server logs with `docker logs archon-mcp`
+
+Ignoring MCP errors leads to missed task updates and incomplete project tracking.
+
 ## Beta Development Guidelines
 
 **Local-only deployment** - each user runs their own instance.
