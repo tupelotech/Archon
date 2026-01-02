@@ -30,6 +30,17 @@ When connected to Claude Code, Cursor, Windsurf, or other MCP-compatible clients
 - `archon:find_versions` - Find version history or get specific version
 - `archon:manage_version` - Manage versions with actions: "create", "restore"
 
+## User Preferences
+
+**IMPORTANT**: AI agents should call `get_user_preferences` at the start of each session to understand user-specific settings.
+
+- `archon:get_user_preferences` - Retrieve all user preferences (document format, agent instructions, etc.)
+- `archon:manage_user_preference` - Set or delete preferences with actions: "set", "delete"
+
+Common preferences:
+- `DOCUMENT_FORMAT` - Preferred format for documents (e.g., "markdown")
+- `AGENT_INSTRUCTIONS` - Custom instructions for AI agents
+
 ## Tool Naming Patterns
 
 MCP tools follow consistent naming:

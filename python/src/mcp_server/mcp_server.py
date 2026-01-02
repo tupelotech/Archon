@@ -530,6 +530,23 @@ def register_modules():
         logger.error(f"✗ Failed to register feature tools: {e}")
         logger.error(traceback.format_exc())
 
+    # User Preferences Tools
+    try:
+        from src.mcp_server.features.preferences import register_preferences_tools
+
+        register_preferences_tools(mcp)
+        modules_registered += 1
+        logger.info("✓ Preferences tools registered")
+    except ImportError as e:
+        logger.warning(f"⚠ Preferences tools module not available (optional): {e}")
+    except (SyntaxError, NameError, AttributeError) as e:
+        logger.error(f"✗ Code error in preferences tools - MUST FIX: {e}")
+        logger.error(traceback.format_exc())
+        raise
+    except Exception as e:
+        logger.error(f"✗ Failed to register preferences tools: {e}")
+        logger.error(traceback.format_exc())
+
     logger.info(f"📦 Total modules registered: {modules_registered}")
 
     if modules_registered == 0:
