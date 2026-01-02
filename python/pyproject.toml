@@ -83,6 +83,7 @@ mcp = [
     "supabase==2.15.1",
     "logfire>=0.30.0",
     "fastapi>=0.104.0",
+    "redis>=5.0.0",
 ]
 
 # Agents container dependencies
@@ -126,6 +127,8 @@ all = [
     "httpx>=0.24.0",
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
+    # Redis for session persistence
+    "redis>=5.0.0",
     # Test dependencies
     "pytest>=8.0.0",
     "pytest-asyncio>=0.21.0",

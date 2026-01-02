@@ -77,6 +77,7 @@ These files contain local configuration and won't be affected by upstream merges
 | Archon UI | 3737 |
 | Archon API | 8181 |
 | Archon MCP | 8051 |
+| Archon Redis | 6380 |
 | Supabase Kong | 8000 |
 | Supabase Studio | 3001 |
 | PostgreSQL | 5433 |
@@ -99,9 +100,9 @@ cd archon-ui-main && npm run dev
 
 All containers use `archon-` prefix to avoid collisions:
 - Supabase containers: `archon-supabase-db`, `archon-supabase-rest`, `archon-supabase-auth`, `archon-supabase-kong`, `archon-supabase-studio`, `archon-supabase-meta`
-- Archon containers: `archon-server`, `archon-mcp`, `archon-ui`
+- Archon containers: `archon-server`, `archon-mcp`, `archon-ui`, `archon-redis`
 - Networks: `archon-network`, `archon-supabase-network`
-- Volumes: `archon-supabase-db-data`
+- Volumes: `archon-supabase-db-data`, `archon-redis-data`
 
 ## Known Issues
 
@@ -109,12 +110,27 @@ All containers use `archon-` prefix to avoid collisions:
 
 **Symptom**: After restarting `archon-mcp`, MCP tool calls fail with "No valid session ID provided"
 
-**Cause**: FastMCP's streamable HTTP transport stores sessions in memory. When the server restarts, sessions are invalidated but clients (Claude Code, Cursor) cache stale session IDs and don't auto-reconnect.
+**Root Cause**: FastMCP's streamable HTTP transport maintains session state in two layers:
+1. **Transport layer** (`_request_streams` dict) - Stores request/response state internally
+2. **Session manager** - Tracks session IDs and expiration
 
-**Workaround**: Restart Claude Code or disconnect/reconnect the MCP server in settings.
+While Archon's session manager now uses Redis for persistence, the transport layer's internal state cannot be externally persisted. This is a fundamental limitation of the MCP Python SDK.
+
+**Technical Details**:
+- The `StreamableHTTPSessionManager` stores sessions in memory
+- Even with Redis-backed event stores, the `_request_streams` dictionary breaks session resumption
+- The error occurs when a client sends a stale session ID after server restart
+
+**Current Workaround**: Restart Claude Code or disconnect/reconnect the MCP server in settings.
+
+**What We've Implemented**:
+- Added `archon-redis` container on port 6380 for session persistence
+- Updated `SessionManager` to use Redis backend when available
+- This prepares for future MCP SDK improvements and enables UI settings persistence
 
 **References**:
-- [Cursor Issue #3640](https://github.com/cursor/cursor/issues/3640)
-- [Python SDK Issue #880](https://github.com/modelcontextprotocol/python-sdk/issues/880)
+- [Python SDK Issue #880](https://github.com/modelcontextprotocol/python-sdk/issues/880) - Horizontal scaling session persistence
+- [Python SDK Issue #1180](https://github.com/modelcontextprotocol/python-sdk/issues/1180) - Session management in Kubernetes
+- [Cursor Issue #3640](https://github.com/cursor/cursor/issues/3640) - Client reconnection issues
 
-**Future Fix**: Implement Redis-backed session persistence or switch to SSE transport.
+**Future Improvements**: Monitor MCP SDK for session persistence fixes, consider SSE transport as alternative.
