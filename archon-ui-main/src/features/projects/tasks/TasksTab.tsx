@@ -2,6 +2,7 @@ import { LayoutGrid, Plus, Table } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
+import { useToast } from "../../shared/hooks/useToast";
 import { DeleteConfirmModal } from "../../ui/components/DeleteConfirmModal";
 import { Button, Card } from "../../ui/primitives";
 import { cn, glassmorphism } from "../../ui/primitives/styles";
@@ -24,6 +25,8 @@ export const TasksTab = ({ projectId, selectedTaskId, onTaskSelected }: TasksTab
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
+  const { showToast } = useToast();
+
   // Fetch tasks using TanStack Query
   const { data: tasks = [], isLoading: isLoadingTasks } = useProjectTasks(projectId);
 
@@ -39,14 +42,24 @@ export const TasksTab = ({ projectId, selectedTaskId, onTaskSelected }: TasksTab
 
   // Auto-open task when selectedTaskId is provided (e.g., from changelog)
   useEffect(() => {
-    if (selectedTaskId && tasks.length > 0) {
+    // Wait for tasks to load before trying to find the task
+    if (selectedTaskId && !isLoadingTasks) {
       const task = tasks.find((t) => t.id === selectedTaskId);
       if (task) {
         openEditModal(task);
         onTaskSelected?.();
+      } else if (tasks.length > 0) {
+        // Only show "not found" message if we have loaded tasks but couldn't find it
+        showToast("Task not found - it may have been deleted", "warning");
+        onTaskSelected?.();
+      }
+      // If tasks.length === 0 and not loading, it means no tasks exist yet
+      // In this case, also clear the selection
+      else {
+        onTaskSelected?.();
       }
     }
-  }, [selectedTaskId, tasks, onTaskSelected, openEditModal]);
+  }, [selectedTaskId, tasks, isLoadingTasks, onTaskSelected, openEditModal, showToast]);
 
   const openCreateModal = () => {
     setEditingTask(null);

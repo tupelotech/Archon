@@ -2,6 +2,7 @@
   "project_id": "2352cef7-d7e5-4203-ad1c-4a9fd2bc5e38",
   "project_name": "Archon Development",
   "auto_log_changes": true,
+  "auto_create_tasks": true,
   "change_aggregation": "per_commit",
   "log_file_changes": true,
   "log_git_commits": true,

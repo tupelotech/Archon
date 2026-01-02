@@ -5,20 +5,116 @@ Triggers on Write and Edit tool completions.
 
 This hook captures file modifications made by Claude Code and logs them
 to the Archon change tracking system for audit and changelog generation.
+
+If a pending prompt exists (from UserPromptSubmit hook) without a task,
+this hook creates the task first - ensuring only prompts that cause
+actual code changes get tracked as tasks.
 """
 import json
 import sys
 import os
 import subprocess
+import re
 from pathlib import Path
 from datetime import datetime
 
 # Configuration
 ARCHON_API_URL = os.environ.get('ARCHON_API_URL', 'http://localhost:8181')
 LOG_FILE = Path(os.environ.get('CLAUDE_PROJECT_DIR', '.')) / '.claude' / 'change-log.jsonl'
+SESSION_STATE_FILE = Path(os.environ.get('CLAUDE_PROJECT_DIR', '.')) / '.claude' / 'state' / 'session-state.json'
 
 # Track changes within session to enable aggregation
 SESSION_CHANGES: dict = {}
+
+
+def get_session_state() -> dict:
+    """Read current session state to get task_id for linking changes."""
+    if SESSION_STATE_FILE.exists():
+        try:
+            with open(SESSION_STATE_FILE) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {}
+
+
+def save_session_state(state: dict):
+    """Save session state."""
+    try:
+        SESSION_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(SESSION_STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+    except IOError:
+        pass
+
+
+def summarize_prompt(prompt: str) -> str:
+    """Create a short title from the prompt (first 80 chars of first sentence)."""
+    first_line = prompt.strip().split('\n')[0]
+    first_sentence = re.split(r'[.!?]', first_line)[0].strip()
+    if len(first_sentence) > 80:
+        return first_sentence[:77] + '...'
+    return first_sentence
+
+
+def create_task_from_pending_prompt(state: dict, project_id: str) -> str | None:
+    """Create a task from pending prompt and return task_id."""
+    pending_prompt = state.get('pending_prompt')
+    if not pending_prompt:
+        return None
+
+    title = summarize_prompt(pending_prompt)
+    description = f"**User Prompt:**\n\n{pending_prompt}\n\n---\n*Auto-created by Claude Code on first code change*"
+
+    payload = {
+        'project_id': project_id,
+        'title': title,
+        'description': description,
+        'assignee': 'Claude',
+        'feature': 'agent-session',
+        'priority': 'medium'
+    }
+
+    try:
+        result = subprocess.run(
+            [
+                'curl', '-s', '-X', 'POST',
+                f'{ARCHON_API_URL}/api/tasks',
+                '-H', 'Content-Type: application/json',
+                '-d', json.dumps(payload),
+                '--max-time', '10'
+            ],
+            capture_output=True,
+            timeout=15
+        )
+
+        if result.returncode == 0:
+            response = json.loads(result.stdout)
+            task = response.get('task', {})
+            task_id = task.get('id')
+            if task_id:
+                # Update state: set task_id and clear pending prompt
+                state['current_task_id'] = task_id
+                state['pending_prompt'] = None
+                state['pending_prompt_at'] = None
+                state['task_created_at'] = datetime.now().isoformat()
+                save_session_state(state)
+
+                log_to_file({
+                    'timestamp': datetime.now().isoformat(),
+                    'event': 'task_created',
+                    'task_id': task_id,
+                    'title': title
+                })
+                return task_id
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as e:
+        log_to_file({
+            'timestamp': datetime.now().isoformat(),
+            'event': 'task_creation_failed',
+            'error': str(e)
+        })
+
+    return None
 
 
 def get_project_config() -> dict:
@@ -74,6 +170,16 @@ def log_to_archon(change_type: str, summary: str, files: list, session_id: str, 
     if not config.get('auto_log_changes', True):
         return
 
+    # Get current session state
+    session_state = get_session_state()
+    task_id = session_state.get('current_task_id')
+
+    # If there's a pending prompt but no task yet, create the task now
+    # This ensures tasks are only created for prompts that result in code changes
+    if session_state.get('pending_prompt') and not task_id and project_id:
+        if config.get('auto_create_tasks', True):
+            task_id = create_task_from_pending_prompt(session_state, project_id)
+
     payload = {
         'change_type': change_type,
         'summary': summary,
@@ -84,6 +190,10 @@ def log_to_archon(change_type: str, summary: str, files: list, session_id: str, 
 
     if project_id:
         payload['project_id'] = project_id
+
+    # Link change to current task if available
+    if task_id:
+        payload['task_id'] = task_id
 
     try:
         result = subprocess.run(

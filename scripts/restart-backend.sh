@@ -29,7 +29,7 @@ echo "⏳ Waiting for services to become healthy..."
 
 # Wait for backend health (max 60 seconds)
 for i in {1..60}; do
-    if curl -s --max-time 2 http://localhost:8181/health | grep -q '"ready": true'; then
+    if curl -s --max-time 2 http://localhost:8181/health | grep -q '"ready":\s*true'; then
         echo "✅ Backend is healthy"
         break
     fi
