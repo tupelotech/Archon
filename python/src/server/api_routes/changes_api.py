@@ -31,6 +31,7 @@ class CreateChangeRequest(BaseModel):
 
 
 class UpdateChangeRequest(BaseModel):
+    project_id: str | None = None
     summary: str | None = None
     details: dict[str, Any] | None = None
     files_affected: list[str] | None = None
@@ -139,6 +140,47 @@ async def create_change(request: CreateChangeRequest):
         raise
     except Exception as e:
         logfire.error(f"Failed to create change | error={str(e)}")
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.put("/changes/{change_id}")
+async def update_change(change_id: str, request: UpdateChangeRequest):
+    """
+    Update a change entry.
+
+    Args:
+        change_id: UUID of the change to update
+        request: Fields to update (project_id, summary, details, files_affected, commit_sha)
+    """
+    try:
+        logfire.info(f"Updating change | id={change_id}")
+
+        change_service = ChangeService()
+        success, result = change_service.update_change(
+            change_id=change_id,
+            project_id=request.project_id,
+            summary=request.summary,
+            details=request.details,
+            files_affected=request.files_affected,
+            commit_sha=request.commit_sha,
+        )
+
+        if not success:
+            error_msg = result.get("error", "Unknown error")
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            else:
+                raise HTTPException(status_code=400, detail=error_msg)
+
+        updated_change = result["change"]
+        logfire.info(f"Change updated | id={change_id}")
+
+        return {"message": "Change updated successfully", "change": updated_change}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to update change | error={str(e)} | id={change_id}")
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 

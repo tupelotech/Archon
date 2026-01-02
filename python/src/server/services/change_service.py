@@ -241,6 +241,82 @@ class ChangeService:
             logger.error(f"Error listing changes: {e}")
             return False, {"error": f"Error listing changes: {str(e)}"}
 
+    def update_change(
+        self,
+        change_id: str,
+        project_id: str | None = None,
+        summary: str | None = None,
+        details: dict[str, Any] | None = None,
+        files_affected: list[str] | None = None,
+        commit_sha: str | None = None,
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Update an existing change entry.
+
+        Args:
+            change_id: UUID of the change to update
+            project_id: New project association (can set or clear)
+            summary: Updated summary text
+            details: Updated metadata
+            files_affected: Updated list of files
+            commit_sha: Updated commit SHA
+
+        Returns:
+            Tuple of (success, result_dict)
+        """
+        try:
+            # First check if change exists
+            check_response = (
+                self.supabase_client.table("archon_changes")
+                .select("*")
+                .eq("id", change_id)
+                .execute()
+            )
+
+            if not check_response.data:
+                return False, {"error": f"Change with ID {change_id} not found"}
+
+            # Build update data - only include fields that were provided
+            update_data: dict[str, Any] = {}
+
+            if project_id is not None:
+                update_data["project_id"] = project_id
+
+            if summary is not None:
+                if not summary.strip():
+                    return False, {"error": "Summary cannot be empty"}
+                update_data["summary"] = summary.strip()
+
+            if details is not None:
+                update_data["details"] = details
+
+            if files_affected is not None:
+                update_data["files_affected"] = files_affected
+
+            if commit_sha is not None:
+                update_data["commit_sha"] = commit_sha
+
+            if not update_data:
+                return False, {"error": "No fields to update"}
+
+            response = (
+                self.supabase_client.table("archon_changes")
+                .update(update_data)
+                .eq("id", change_id)
+                .execute()
+            )
+
+            if response.data:
+                change = response.data[0]
+                logger.info(f"Change updated | id={change_id} | fields={list(update_data.keys())}")
+                return True, {"change": change}
+            else:
+                return False, {"error": f"Failed to update change {change_id}"}
+
+        except Exception as e:
+            logger.error(f"Error updating change: {e}")
+            return False, {"error": f"Error updating change: {str(e)}"}
+
     def delete_change(self, change_id: str) -> tuple[bool, dict[str, Any]]:
         """
         Delete a change entry.
