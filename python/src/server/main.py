@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api_routes.agent_chat_api import router as agent_chat_router
 from .api_routes.bug_report_api import router as bug_report_router
+from .api_routes.changes_api import router as changes_router
 from .api_routes.internal_api import router as internal_router
 from .api_routes.knowledge_api import router as knowledge_router
 from .api_routes.mcp_api import router as mcp_router
@@ -188,6 +189,7 @@ app.include_router(pages_router)
 app.include_router(ollama_router)
 app.include_router(projects_router)
 app.include_router(progress_router)
+app.include_router(changes_router)
 app.include_router(agent_chat_router)
 app.include_router(internal_router)
 app.include_router(bug_report_router)

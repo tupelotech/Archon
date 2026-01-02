@@ -308,6 +308,38 @@ Create feature-level tasks:
 - "Implement user authentication feature"
 - "Add payment processing system"
 - "Create admin dashboard"
+
+## 📝 Change Tracking
+
+**IMPORTANT**: Call `get_user_preferences()` at session start to discover changelog conventions.
+
+Use change tracking tools to record ALL significant development changes:
+
+### Tools
+- `log_change(change_type, summary, ...)` - Record a change entry
+  - change_type: "feature", "bugfix", "refactor", "docs", "config", "test"
+  - Optional: project_id, session_id, files_affected, commit_sha, details
+- `find_changes(...)` - Search and filter changes
+- `get_project_changelog(project_id, format)` - Generate changelog (markdown/json)
+
+### When to Log Changes (ALWAYS after completing work)
+- After completing ANY feature, bugfix, refactor, or config change
+- When updating documentation
+- After adding or modifying tests
+- Include files_affected for multi-file changes
+
+### Summary Format
+- Start with action verb: "Add", "Fix", "Update", "Remove", "Refactor"
+- Be concise but descriptive
+- Include affected component/area
+
+### Example
+```
+log_change("feature", "Add user authentication with JWT tokens",
+           files_affected=["src/auth.py", "src/user.py"])
+log_change("config", "Update Docker namespace isolation for container prefix",
+           files_affected=["docker-compose.yml"])
+```
 """
 
 # Initialize the main FastMCP server with fixed configuration
@@ -545,6 +577,23 @@ def register_modules():
         raise
     except Exception as e:
         logger.error(f"✗ Failed to register preferences tools: {e}")
+        logger.error(traceback.format_exc())
+
+    # Change Tracking Tools
+    try:
+        from src.mcp_server.features.changes import register_changes_tools
+
+        register_changes_tools(mcp)
+        modules_registered += 1
+        logger.info("✓ Changes tools registered")
+    except ImportError as e:
+        logger.warning(f"⚠ Changes tools module not available (optional): {e}")
+    except (SyntaxError, NameError, AttributeError) as e:
+        logger.error(f"✗ Code error in changes tools - MUST FIX: {e}")
+        logger.error(traceback.format_exc())
+        raise
+    except Exception as e:
+        logger.error(f"✗ Failed to register changes tools: {e}")
         logger.error(traceback.format_exc())
 
     logger.info(f"📦 Total modules registered: {modules_registered}")

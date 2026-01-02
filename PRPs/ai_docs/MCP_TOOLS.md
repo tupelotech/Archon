@@ -41,6 +41,34 @@ Common preferences:
 - `DOCUMENT_FORMAT` - Preferred format for documents (e.g., "markdown")
 - `AGENT_INSTRUCTIONS` - Custom instructions for AI agents
 
+## Change Tracking
+
+Track development changes made during AI-assisted coding sessions for changelog generation and auditing.
+
+- `archon:log_change` - Record a new change entry
+  - Args: change_type (required), summary (required), project_id, session_id, details, files_affected, commit_sha
+  - Change types: "feature", "bugfix", "refactor", "docs", "config", "test"
+- `archon:find_changes` - Search and filter changes, or get specific change by ID
+  - Args: change_id, project_id, change_type, query, date_from, date_to, page, per_page
+- `archon:get_project_changelog` - Generate formatted changelog for a project
+  - Args: project_id (required), format ("markdown" or "json")
+
+Example usage:
+```
+# Log a new feature
+log_change("feature", "Added user authentication with JWT", project_id="p-123")
+
+# Log a bug fix with affected files
+log_change("bugfix", "Fixed null pointer in user service",
+           files_affected=["src/user.py"], commit_sha="abc1234")
+
+# Find all bug fixes for a project
+find_changes(project_id="p-123", change_type="bugfix")
+
+# Generate markdown changelog
+get_project_changelog(project_id="p-123", format="markdown")
+```
+
 ## Tool Naming Patterns
 
 MCP tools follow consistent naming:

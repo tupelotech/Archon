@@ -1,9 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Activity, CheckCircle2, FileText, LayoutGrid, List, ListTodo, Pin } from "lucide-react";
+import { Activity, CheckCircle2, FileText, History, LayoutGrid, List, ListTodo, Pin } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useStaggeredEntrance } from "../../../hooks/useStaggeredEntrance";
+import { ProjectChangelogTab } from "../../changes";
 import { isOptimistic } from "../../shared/utils/optimistic";
 import { DeleteConfirmModal } from "../../ui/components/DeleteConfirmModal";
 import { OptimisticIndicator } from "../../ui/primitives/OptimisticIndicator";
@@ -214,6 +215,7 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
                   items={[
                     { id: "docs", label: "Docs", icon: <FileText className="w-4 h-4" /> },
                     { id: "tasks", label: "Tasks", icon: <ListTodo className="w-4 h-4" /> },
+                    { id: "changelog", label: "Changelog", icon: <History className="w-4 h-4" /> },
                   ]}
                   activeSection={activeTab}
                   onSectionClick={(id) => setActiveTab(id as string)}
@@ -230,6 +232,9 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
               <div>
                 {activeTab === "docs" && <DocsTab project={selectedProject} />}
                 {activeTab === "tasks" && <TasksTab projectId={selectedProject.id} />}
+                {activeTab === "changelog" && (
+                  <ProjectChangelogTab projectId={selectedProject.id} githubRepo={selectedProject.github_repo} />
+                )}
               </div>
             </motion.div>
           )}
@@ -293,6 +298,7 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
                       items={[
                         { id: "docs", label: "Docs", icon: <FileText className="w-4 h-4" /> },
                         { id: "tasks", label: "Tasks", icon: <ListTodo className="w-4 h-4" /> },
+                        { id: "changelog", label: "Changelog", icon: <History className="w-4 h-4" /> },
                       ]}
                       activeSection={activeTab}
                       onSectionClick={(id) => setActiveTab(id as string)}
@@ -310,6 +316,9 @@ export function ProjectsView({ className = "", "data-id": dataId }: ProjectsView
                 <div>
                   {activeTab === "docs" && <DocsTab project={selectedProject} />}
                   {activeTab === "tasks" && <TasksTab projectId={selectedProject.id} />}
+                  {activeTab === "changelog" && (
+                    <ProjectChangelogTab projectId={selectedProject.id} githubRepo={selectedProject.github_repo} />
+                  )}
                 </div>
               </>
             )}

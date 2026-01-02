@@ -316,3 +316,9 @@ npm run lint:files src/components/SomeComponent.tsx
 ## MCP Tools Available
 
 @PRPs/ai_docs/MCP_TOOLS.md
+
+## Fork Management
+
+This is a fork of coleam00/Archon. Branch `main` stays synced with upstream; branch `tupelotech` contains customizations.
+
+@PRPs/ai_docs/BRANCH_STRATEGY.md

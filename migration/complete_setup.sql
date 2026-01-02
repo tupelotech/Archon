@@ -870,6 +870,13 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+-- Create change_type enum for change tracking
+DO $$ BEGIN
+    CREATE TYPE change_type AS ENUM ('feature', 'bugfix', 'refactor', 'docs', 'config', 'test');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 -- Assignee is now a text field to allow any agent name
 -- No longer using enum to support flexible agent assignments
 
@@ -957,6 +964,25 @@ CREATE INDEX IF NOT EXISTS idx_archon_document_versions_task_id ON archon_docume
 CREATE INDEX IF NOT EXISTS idx_archon_document_versions_field_name ON archon_document_versions(field_name);
 CREATE INDEX IF NOT EXISTS idx_archon_document_versions_version_number ON archon_document_versions(version_number);
 CREATE INDEX IF NOT EXISTS idx_archon_document_versions_created_at ON archon_document_versions(created_at);
+
+-- Change Tracking table for recording development changes
+CREATE TABLE IF NOT EXISTS archon_changes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES archon_projects(id) ON DELETE SET NULL,
+    session_id TEXT,
+    change_type change_type NOT NULL,
+    summary TEXT NOT NULL,
+    details JSONB DEFAULT '{}'::jsonb,
+    files_affected TEXT[] DEFAULT ARRAY[]::TEXT[],
+    commit_sha TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for change tracking
+CREATE INDEX IF NOT EXISTS idx_archon_changes_project ON archon_changes(project_id);
+CREATE INDEX IF NOT EXISTS idx_archon_changes_created ON archon_changes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_archon_changes_type ON archon_changes(change_type);
+CREATE INDEX IF NOT EXISTS idx_archon_changes_session ON archon_changes(session_id);
 
 -- Apply triggers to tables
 CREATE OR REPLACE TRIGGER update_archon_projects_updated_at
