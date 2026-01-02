@@ -266,6 +266,124 @@ def register_changes_tools(mcp: FastMCP):
             return MCPErrorFormatter.from_exception(e, "find changes")
 
     @mcp.tool()
+    async def manage_change(
+        ctx: Context,
+        action: str,
+        change_id: str | None = None,
+        project_id: str | None = None,
+        summary: str | None = None,
+        files_affected: list[str] | None = None,
+        commit_sha: str | None = None,
+    ) -> str:
+        """
+        Manage changes (update or delete).
+
+        Use log_change() for creating new changes.
+
+        Args:
+            action: "update" | "delete"
+            change_id: Change UUID (required for both actions)
+            project_id: New project association (for update)
+            summary: Updated summary text (for update)
+            files_affected: Updated list of files (for update)
+            commit_sha: Updated commit SHA (for update)
+
+        Returns:
+            JSON with success status and updated/deleted change info
+
+        Examples:
+            manage_change("update", change_id="c-123", project_id="p-456")
+            manage_change("update", change_id="c-123", summary="Updated description")
+            manage_change("delete", change_id="c-123")
+        """
+        try:
+            if action not in ["update", "delete"]:
+                return MCPErrorFormatter.format_error(
+                    error_type="validation_error",
+                    message=f"Invalid action '{action}'",
+                    suggestion="Must be 'update' or 'delete'"
+                )
+
+            if not change_id:
+                return MCPErrorFormatter.format_error(
+                    error_type="validation_error",
+                    message="change_id is required",
+                    suggestion="Provide the UUID of the change to manage"
+                )
+
+            api_url = get_api_url()
+            timeout = get_default_timeout()
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                if action == "delete":
+                    response = await client.delete(
+                        urljoin(api_url, f"/api/changes/{change_id}")
+                    )
+
+                    if response.status_code == 200:
+                        return json.dumps({
+                            "success": True,
+                            "message": f"Change {change_id} deleted successfully",
+                        })
+                    elif response.status_code == 404:
+                        return MCPErrorFormatter.format_error(
+                            error_type="not_found",
+                            message=f"Change {change_id} not found",
+                            http_status=404,
+                        )
+                    else:
+                        return MCPErrorFormatter.from_http_error(response, "delete change")
+
+                else:  # update
+                    update_data: dict[str, Any] = {}
+
+                    if project_id is not None:
+                        update_data["project_id"] = project_id
+                    if summary is not None:
+                        update_data["summary"] = summary
+                    if files_affected is not None:
+                        update_data["files_affected"] = files_affected
+                    if commit_sha is not None:
+                        update_data["commit_sha"] = commit_sha
+
+                    if not update_data:
+                        return MCPErrorFormatter.format_error(
+                            error_type="validation_error",
+                            message="No fields to update",
+                            suggestion="Provide at least one field to update"
+                        )
+
+                    response = await client.put(
+                        urljoin(api_url, f"/api/changes/{change_id}"),
+                        json=update_data
+                    )
+
+                    if response.status_code == 200:
+                        result = response.json()
+                        change = result.get("change", {})
+                        return json.dumps({
+                            "success": True,
+                            "change": optimize_change_response(change),
+                            "message": "Change updated successfully",
+                        })
+                    elif response.status_code == 404:
+                        return MCPErrorFormatter.format_error(
+                            error_type="not_found",
+                            message=f"Change {change_id} not found",
+                            http_status=404,
+                        )
+                    else:
+                        return MCPErrorFormatter.from_http_error(response, "update change")
+
+        except httpx.RequestError as e:
+            return MCPErrorFormatter.from_exception(
+                e, f"{action} change", {"change_id": change_id}
+            )
+        except Exception as e:
+            logger.error(f"Error managing change: {e}", exc_info=True)
+            return MCPErrorFormatter.from_exception(e, f"{action} change")
+
+    @mcp.tool()
     async def get_project_changelog(
         ctx: Context,
         project_id: str,
