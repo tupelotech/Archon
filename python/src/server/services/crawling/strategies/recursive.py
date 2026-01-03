@@ -255,21 +255,28 @@ class RecursiveCrawlStrategy:
                 result_timeout = 120  # 2 minutes max wait between results
                 batch_iterator = batch_results.__aiter__()
 
+                # Track which URLs we've received results for
+                batch_urls_set = set(transformed_batch_urls)
+                received_urls = set()
+
                 while received_results < expected_results:
                     try:
                         result = await asyncio.wait_for(batch_iterator.__anext__(), timeout=result_timeout)
                     except StopAsyncIteration:
+                        missing_count = expected_results - received_results
                         logger.warning(
-                            f"Batch iterator exhausted after {received_results}/{expected_results} results"
+                            f"Batch iterator exhausted after {received_results}/{expected_results} results ({missing_count} missing)"
                         )
                         break
                     except asyncio.TimeoutError:
+                        missing_count = expected_results - received_results
                         logger.warning(
-                            f"Timeout waiting for results after {received_results}/{expected_results} - moving to next batch"
+                            f"Timeout waiting for results after {received_results}/{expected_results} ({missing_count} missing)"
                         )
                         break
 
                     received_results += 1
+                    received_urls.add(result.url)
                     # Check for cancellation during streaming results
                     if cancellation_check:
                         try:
@@ -354,6 +361,74 @@ class RecursiveCrawlStrategy:
                         logger.warning(
                             f"Failed to crawl {original_url}: {getattr(result, 'error_message', 'Unknown error')}"
                         )
+
+                # Retry any missing URLs individually (ones that didn't return from arun_many)
+                missing_urls = batch_urls_set - received_urls
+                if missing_urls and not cancelled:
+                    logger.info(f"Retrying {len(missing_urls)} missing URLs individually")
+                    for missing_url in missing_urls:
+                        if cancellation_check:
+                            try:
+                                cancellation_check()
+                            except asyncio.CancelledError:
+                                cancelled = True
+                                break
+
+                        try:
+                            # Use single page crawl with timeout
+                            retry_result = await asyncio.wait_for(
+                                self.crawler.arun(url=missing_url, config=run_config),
+                                timeout=60  # 1 minute timeout for single page retry
+                            )
+                            total_processed += 1
+
+                            # Map back to original URL
+                            retry_original_url = url_mapping.get(retry_result.url, retry_result.url)
+                            norm_url = normalize_url(retry_original_url)
+                            visited.add(norm_url)
+
+                            if retry_result.success and retry_result.markdown and retry_result.markdown.fit_markdown:
+                                # Extract title (simplified for retry)
+                                title = "Untitled"
+                                if retry_result.html:
+                                    import re
+                                    title_match = re.search(r'<title[^>]*>(.*?)</title>', retry_result.html, re.IGNORECASE | re.DOTALL)
+                                    if title_match:
+                                        title = title_match.group(1).strip().replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"') or "Untitled"
+
+                                if title == "Untitled":
+                                    from urllib.parse import urlparse
+                                    parsed = urlparse(retry_original_url)
+                                    if parsed.path and parsed.path != '/':
+                                        path_parts = [p for p in parsed.path.strip('/').split('/') if p]
+                                        if path_parts:
+                                            title = path_parts[-1].replace('-', ' ').replace('_', ' ').title()
+
+                                results_all.append({
+                                    "url": retry_original_url,
+                                    "markdown": retry_result.markdown.fit_markdown,
+                                    "html": retry_result.html,
+                                    "title": title,
+                                })
+                                depth_successful += 1
+
+                                # Find internal links for next depth
+                                links = getattr(retry_result, "links", {}) or {}
+                                for link in links.get("internal", []):
+                                    next_url = normalize_url(link["href"])
+                                    is_binary = self.url_handler.is_binary_file(next_url)
+                                    if next_url not in visited and not is_binary:
+                                        if next_url not in next_level_urls:
+                                            next_level_urls.add(next_url)
+                                            total_discovered += 1
+
+                                logger.info(f"Retry successful: {missing_url}")
+                            else:
+                                logger.warning(f"Retry failed for {missing_url}: {getattr(retry_result, 'error_message', 'Unknown error')}")
+                        except asyncio.TimeoutError:
+                            logger.warning(f"Retry timeout for {missing_url}")
+                        except Exception as e:
+                            logger.warning(f"Retry error for {missing_url}: {e}")
 
                 if cancelled:
                     break
