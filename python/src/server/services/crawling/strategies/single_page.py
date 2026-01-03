@@ -119,8 +119,8 @@ class SinglePageCrawlStrategy:
                         exclude_all_images=False,
                         # Still remove popups
                         remove_overlay_elements=True,
-                        # Process iframes for complete content
-                        process_iframes=True
+                        # Disabled - iframes crash Chrome and rarely contain doc content
+                        process_iframes=False
                     )
                 else:
                     # Configuration for regular sites

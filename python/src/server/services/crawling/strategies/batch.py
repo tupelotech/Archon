@@ -118,7 +118,7 @@ class BatchCrawlStrategy:
                 scan_full_page=True,  # Trigger lazy loading
                 exclude_all_images=False,
                 remove_overlay_elements=True,
-                process_iframes=True,
+                process_iframes=False,  # Disabled - iframes crash Chrome and rarely contain doc content
             )
         else:
             # Configuration for regular batch crawling
