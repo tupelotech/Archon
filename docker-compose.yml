@@ -21,6 +21,15 @@ services:
     container_name: archon-server
     ports:
       - "${ARCHON_SERVER_PORT:-8181}:${ARCHON_SERVER_PORT:-8181}"
+    # Memory limit ensures container is killed and restarted rather than becoming a zombie
+    # when crawling large sites. Docker will OOM-kill the container, triggering a restart.
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M
+    restart: unless-stopped
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
