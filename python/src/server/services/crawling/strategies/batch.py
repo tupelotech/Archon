@@ -211,8 +211,29 @@ class BatchCrawlStrategy:
                 urls=batch_urls, config=crawl_config, dispatcher=dispatcher
             )
 
-            # Handle streaming results
-            async for result in batch_results:
+            # Handle streaming results with timeout protection
+            # arun_many may not yield results for crashed/failed pages, causing infinite hang
+            expected_results = len(batch_urls)
+            received_results = 0
+            result_timeout = 120  # 2 minutes max wait between results
+            batch_iterator = batch_results.__aiter__()
+
+            while received_results < expected_results:
+                try:
+                    result = await asyncio.wait_for(batch_iterator.__anext__(), timeout=result_timeout)
+                except StopAsyncIteration:
+                    # Iterator exhausted before all results received
+                    logger.warning(
+                        f"Batch iterator exhausted after {received_results}/{expected_results} results"
+                    )
+                    break
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"Timeout waiting for results after {received_results}/{expected_results} - moving to next batch"
+                    )
+                    break
+
+                received_results += 1
                 # Check for cancellation during streaming
                 if cancellation_check:
                     try:

@@ -248,9 +248,28 @@ class RecursiveCrawlStrategy:
                     urls=transformed_batch_urls, config=run_config, dispatcher=dispatcher
                 )
 
-                # Handle streaming results from arun_many
-                i = 0
-                async for result in batch_results:
+                # Handle streaming results with timeout protection
+                # arun_many may not yield results for crashed/failed pages, causing infinite hang
+                expected_results = len(batch_urls)
+                received_results = 0
+                result_timeout = 120  # 2 minutes max wait between results
+                batch_iterator = batch_results.__aiter__()
+
+                while received_results < expected_results:
+                    try:
+                        result = await asyncio.wait_for(batch_iterator.__anext__(), timeout=result_timeout)
+                    except StopAsyncIteration:
+                        logger.warning(
+                            f"Batch iterator exhausted after {received_results}/{expected_results} results"
+                        )
+                        break
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            f"Timeout waiting for results after {received_results}/{expected_results} - moving to next batch"
+                        )
+                        break
+
+                    received_results += 1
                     # Check for cancellation during streaming results
                     if cancellation_check:
                         try:
@@ -336,9 +355,6 @@ class RecursiveCrawlStrategy:
                             f"Failed to crawl {original_url}: {getattr(result, 'error_message', 'Unknown error')}"
                         )
 
-                    # Skip the confusing "processed X/Y URLs" updates
-                    # The "crawling URLs" message at the start of each batch is more accurate
-                    i += 1
                 if cancelled:
                     break
 
