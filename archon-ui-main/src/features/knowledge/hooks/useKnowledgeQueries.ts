@@ -28,13 +28,13 @@ export const knowledgeKeys = {
   all: ["knowledge"] as const,
   lists: () => [...knowledgeKeys.all, "list"] as const,
   detail: (id: string) => [...knowledgeKeys.all, "detail", id] as const,
-  // Include domain + pagination to avoid cache collisions
-  chunks: (id: string, opts?: { domain?: string; limit?: number; offset?: number }) =>
+  // Include domain + search + pagination to avoid cache collisions
+  chunks: (id: string, opts?: { domain?: string; search?: string; limit?: number; offset?: number }) =>
     [
       ...knowledgeKeys.all,
       id,
       "chunks",
-      { domain: opts?.domain ?? "all", limit: opts?.limit, offset: opts?.offset },
+      { domain: opts?.domain ?? "all", search: opts?.search ?? "", limit: opts?.limit, offset: opts?.offset },
     ] as const,
   // Include pagination in the key
   codeExamples: (id: string, opts?: { limit?: number; offset?: number }) =>
@@ -763,19 +763,20 @@ export function useKnowledgeSummaries(filter?: KnowledgeItemsFilter) {
 }
 
 /**
- * Fetch document chunks with pagination
+ * Fetch document chunks with pagination and search
  */
 export function useKnowledgeChunks(
   sourceId: string | null,
-  options?: { limit?: number; offset?: number; enabled?: boolean },
+  options?: { search?: string; limit?: number; offset?: number; enabled?: boolean },
 ) {
   return useQuery({
     queryKey: sourceId
-      ? knowledgeKeys.chunks(sourceId, { limit: options?.limit, offset: options?.offset })
+      ? knowledgeKeys.chunks(sourceId, { search: options?.search, limit: options?.limit, offset: options?.offset })
       : DISABLED_QUERY_KEY,
     queryFn: () =>
       sourceId
         ? knowledgeService.getKnowledgeItemChunks(sourceId, {
+            search: options?.search,
             limit: options?.limit,
             offset: options?.offset,
           })

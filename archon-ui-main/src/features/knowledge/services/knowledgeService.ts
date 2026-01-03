@@ -150,12 +150,13 @@ export const knowledgeService = {
   },
 
   /**
-   * Get document chunks for a knowledge item with pagination
+   * Get document chunks for a knowledge item with pagination and search
    */
   async getKnowledgeItemChunks(
     sourceId: string,
     options?: {
       domainFilter?: string;
+      search?: string;
       limit?: number;
       offset?: number;
     },
@@ -163,6 +164,9 @@ export const knowledgeService = {
     const params = new URLSearchParams();
     if (options?.domainFilter) {
       params.append("domain_filter", options.domainFilter);
+    }
+    if (options?.search) {
+      params.append("search", options.search);
     }
     if (options?.limit !== undefined) {
       params.append("limit", options.limit.toString());

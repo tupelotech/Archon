@@ -1,9 +1,9 @@
 /**
  * Paginated Inspector Data Hook
- * Implements progressive loading for documents and code examples
+ * Implements progressive loading for documents and code examples with server-side search
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKnowledgeChunks, useKnowledgeCodeExamples } from "../../hooks/useKnowledgeQueries";
 import type { CodeExample, DocumentChunk } from "../../types";
 
@@ -42,12 +42,16 @@ export function usePaginatedInspectorData({
   const [codeOffset, setCodeOffset] = useState(0);
   const [allCode, setAllCode] = useState<CodeExample[]>([]);
 
-  // Fetch documents with pagination
+  // Track previous search query to detect changes
+  const prevSearchRef = useRef(searchQuery);
+
+  // Fetch documents with pagination AND server-side search
   const {
     data: docsResponse,
     isLoading: docsLoading,
     isFetching: docsFetching,
   } = useKnowledgeChunks(sourceId, {
+    search: searchQuery || undefined,
     limit: PAGE_SIZE,
     offset: docsOffset,
     enabled,
@@ -63,6 +67,15 @@ export function usePaginatedInspectorData({
     offset: codeOffset,
     enabled,
   });
+
+  // Reset pagination when search query changes
+  useEffect(() => {
+    if (prevSearchRef.current !== searchQuery) {
+      setDocsOffset(0);
+      setAllDocs([]);
+      prevSearchRef.current = searchQuery;
+    }
+  }, [searchQuery]);
 
   // Update accumulated documents when new data arrives
   useEffect(() => {
@@ -98,21 +111,10 @@ export function usePaginatedInspectorData({
     }
   }, [codeResponse, codeOffset]);
 
-  // Filter documents based on search
-  const filteredDocuments = useMemo(() => {
-    if (!searchQuery) return allDocs;
+  // Documents are now filtered server-side, just return accumulated results
+  const filteredDocuments = allDocs;
 
-    const query = searchQuery.toLowerCase();
-    return allDocs.filter(
-      (doc) =>
-        doc.content?.toLowerCase().includes(query) ||
-        doc.metadata?.title?.toLowerCase().includes(query) ||
-        doc.metadata?.section?.toLowerCase().includes(query) ||
-        doc.url?.toLowerCase().includes(query),
-    );
-  }, [allDocs, searchQuery]);
-
-  // Filter code examples based on search
+  // Filter code examples client-side (server-side search not implemented for code)
   const filteredCode = useMemo(() => {
     if (!searchQuery) return allCode;
 

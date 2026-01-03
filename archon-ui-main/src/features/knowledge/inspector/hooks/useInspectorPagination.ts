@@ -34,6 +34,7 @@ export function useInspectorPagination({
   const PAGE_SIZE = 100;
 
   // Use infinite query for the current view mode
+  // Include searchQuery in key for documents (server-side search)
   const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery<
     ChunksResponse | CodeExamplesResponse,
     Error
@@ -41,13 +42,21 @@ export function useInspectorPagination({
     queryKey: [
       ...knowledgeKeys.detail(sourceId),
       viewMode === "documents" ? "chunks-infinite" : "code-examples-infinite",
+      viewMode === "documents" ? searchQuery : undefined, // Only include search in key for documents
     ],
     queryFn: ({ pageParam }: { pageParam: unknown }) => {
       const page = Number(pageParam) || 0;
-      const service =
-        viewMode === "documents" ? knowledgeService.getKnowledgeItemChunks : knowledgeService.getCodeExamples;
 
-      return service(sourceId, {
+      if (viewMode === "documents") {
+        // Documents API supports server-side search
+        return knowledgeService.getKnowledgeItemChunks(sourceId, {
+          limit: PAGE_SIZE,
+          offset: page * PAGE_SIZE,
+          search: searchQuery || undefined,
+        });
+      }
+      // Code examples API doesn't support search - will filter client-side
+      return knowledgeService.getCodeExamples(sourceId, {
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       });
@@ -61,7 +70,7 @@ export function useInspectorPagination({
     initialPageParam: 0,
   });
 
-  // Flatten the paginated data and apply search filtering
+  // Flatten the paginated data and apply client-side search filtering (for code examples only)
   const { items, totalCount, loadedCount } = useMemo(() => {
     type Page = ChunksResponse | CodeExamplesResponse;
     if (!data || !data.pages) {
@@ -79,31 +88,22 @@ export function useInspectorPagination({
     const totalCount = first && "total" in first && typeof first.total === "number" ? first.total : allItems.length;
     const loadedCount = allItems.length;
 
-    // Apply search filtering
-    if (!searchQuery) {
+    // Documents use server-side search (passed to API), so no client-side filtering needed
+    if (viewMode === "documents" || !searchQuery) {
       return { items: allItems, totalCount, loadedCount };
     }
 
+    // Code examples API doesn't support search, so apply client-side filtering
     const query = searchQuery.toLowerCase();
     const filteredItems = allItems.filter((item: DocumentChunk | CodeExample) => {
-      if (viewMode === "documents") {
-        const doc = item as DocumentChunk;
-        return (
-          doc.content?.toLowerCase().includes(query) ||
-          doc.title?.toLowerCase().includes(query) ||
-          doc.metadata?.title?.toLowerCase().includes(query) ||
-          doc.metadata?.section?.toLowerCase().includes(query)
-        );
-      } else {
-        const code = item as CodeExample;
-        return (
-          code.content?.toLowerCase().includes(query) ||
-          code.summary?.toLowerCase().includes(query) ||
-          code.language?.toLowerCase().includes(query) ||
-          code.file_path?.toLowerCase().includes(query) ||
-          code.title?.toLowerCase().includes(query)
-        );
-      }
+      const code = item as CodeExample;
+      return (
+        code.content?.toLowerCase().includes(query) ||
+        code.summary?.toLowerCase().includes(query) ||
+        code.language?.toLowerCase().includes(query) ||
+        code.file_path?.toLowerCase().includes(query) ||
+        code.title?.toLowerCase().includes(query)
+      );
     });
 
     return { items: filteredItems, totalCount, loadedCount };

@@ -289,6 +289,28 @@ class RecursiveCrawlStrategy:
                                 if extracted_title:
                                     title = extracted_title
 
+                        # Fallback: Extract title from markdown H1/H2 headers
+                        if title == "Untitled" and result.markdown and result.markdown.fit_markdown:
+                            import re
+                            lines = result.markdown.fit_markdown.split('\n')[:10]
+                            for line in lines:
+                                line = line.strip()
+                                if line.startswith('# ') and not line.startswith('##'):
+                                    title = line[2:].strip()
+                                    break
+                                elif line.startswith('## '):
+                                    title = line[3:].strip()
+                                    break
+
+                        # Final fallback: Extract from URL
+                        if title == "Untitled":
+                            from urllib.parse import urlparse
+                            parsed = urlparse(original_url)
+                            if parsed.path and parsed.path != '/':
+                                path_parts = [p for p in parsed.path.strip('/').split('/') if p]
+                                if path_parts:
+                                    title = path_parts[-1].replace('-', ' ').replace('_', ' ').title()
+
                         results_all.append({
                             "url": original_url,
                             "markdown": result.markdown.fit_markdown,

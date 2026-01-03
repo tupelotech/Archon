@@ -191,6 +191,31 @@ class SinglePageCrawlStrategy:
                         if extracted_title:
                             title = extracted_title
 
+                # Fallback: Extract title from markdown H1/H2 headers if HTML title is missing
+                if title == "Untitled" and result.markdown:
+                    import re
+                    lines = result.markdown.split('\n')[:10]  # Check first 10 lines
+                    for line in lines:
+                        line = line.strip()
+                        # Match H1 headers (# Title)
+                        if line.startswith('# ') and not line.startswith('##'):
+                            title = line[2:].strip()
+                            break
+                        # Match H2 headers (## Title) as secondary fallback
+                        elif line.startswith('## '):
+                            title = line[3:].strip()
+                            break
+
+                # Final fallback: Extract meaningful part from URL
+                if title == "Untitled":
+                    from urllib.parse import urlparse
+                    parsed = urlparse(url)
+                    if parsed.path and parsed.path != '/':
+                        # Get the last meaningful path segment
+                        path_parts = [p for p in parsed.path.strip('/').split('/') if p]
+                        if path_parts:
+                            title = path_parts[-1].replace('-', ' ').replace('_', ' ').title()
+
                 return {
                     "success": True,
                     "url": original_url,  # Use original URL for tracking

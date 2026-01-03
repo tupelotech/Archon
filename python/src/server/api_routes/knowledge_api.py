@@ -364,18 +364,20 @@ async def delete_knowledge_item(source_id: str):
 async def get_knowledge_item_chunks(
     source_id: str,
     domain_filter: str | None = None,
+    search: str | None = None,
     limit: int = 20,
     offset: int = 0
 ):
     """
-    Get document chunks for a specific knowledge item with pagination.
-    
+    Get document chunks for a specific knowledge item with pagination and search.
+
     Args:
         source_id: The source ID
         domain_filter: Optional domain filter for URLs
+        search: Optional full-text search query across content
         limit: Maximum number of chunks to return (default 20, max 100)
         offset: Number of chunks to skip (for pagination)
-    
+
     Returns:
         Paginated chunks with metadata
     """
@@ -387,7 +389,7 @@ async def get_knowledge_item_chunks(
 
         safe_logfire_info(
             f"Fetching chunks | source_id={source_id} | domain_filter={domain_filter} | "
-            f"limit={limit} | offset={offset}"
+            f"search={search} | limit={limit} | offset={offset}"
         )
 
         supabase = get_supabase_client()
@@ -401,6 +403,15 @@ async def get_knowledge_item_chunks(
         if domain_filter:
             count_query = count_query.ilike("url", f"%{domain_filter}%")
 
+        # Apply search filter to count query
+        if search and search.strip():
+            search_term = search.strip()
+            # Use PostgreSQL full-text search on content_search_vector if available,
+            # otherwise fall back to case-insensitive pattern matching
+            count_query = count_query.or_(
+                f"content.ilike.%{search_term}%,url.ilike.%{search_term}%"
+            )
+
         count_result = count_query.execute()
         total = count_result.count if hasattr(count_result, "count") else 0
 
@@ -413,6 +424,14 @@ async def get_knowledge_item_chunks(
         # Apply domain filtering if provided
         if domain_filter:
             query = query.ilike("url", f"%{domain_filter}%")
+
+        # Apply search filter
+        if search and search.strip():
+            search_term = search.strip()
+            # Search in content and URL
+            query = query.or_(
+                f"content.ilike.%{search_term}%,url.ilike.%{search_term}%"
+            )
 
         # Deterministic ordering (URL then id)
         query = query.order("url", desc=False).order("id", desc=False)
@@ -503,6 +522,7 @@ async def get_knowledge_item_chunks(
             "success": True,
             "source_id": source_id,
             "domain_filter": domain_filter,
+            "search": search,
             "chunks": chunks,
             "total": total,
             "limit": limit,
